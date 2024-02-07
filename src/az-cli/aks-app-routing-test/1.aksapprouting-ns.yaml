@@ -1,0 +1,4 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: aks-app-routing-test

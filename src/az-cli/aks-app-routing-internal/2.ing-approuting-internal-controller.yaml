@@ -1,0 +1,23 @@
+# https://learn.microsoft.com/en-us/azure/aks/app-routing-nginx-configuration#create-an-internal-nginx-ingress-controller-with-a-private-ip-address
+apiVersion: approuting.kubernetes.azure.com/v1alpha1
+kind: NginxIngressController
+metadata:
+  name: ing-internal
+spec:
+  ingressClassName: ing-internal
+  controllerNamePrefix: ing-internal
+  loadBalancerAnnotations: 
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    service.beta.kubernetes.io/azure-pls-create: "true"
+    # service.beta.kubernetes.io/azure-pip-name: "myIngressPublicIP"
+    # service.beta.kubernetes.io/azure-load-balancer-resource-group: "myNetworkResourceGroup"
+    # service.beta.kubernetes.io/azure-pls-name: "pls-ing-approuting-internal"
+    # service.beta.kubernetes.io/azure-pls-ip-configuration-subnet: "aks-ilb-snet"
+    # service.beta.kubernetes.io/azure-pls-ip-configuration-ip-address-count: "1"
+    # service.beta.kubernetes.io/azure-pls-proxy-protocol: "false"
+    # service.beta.kubernetes.io/azure-pls-visibility: "34144584-4817-47a0-a912-bd00bae76495" # "*"
+    # service.beta.kubernetes.io/azure-pls-auto-approval: "34144584-4817-47a0-a912-bd00bae76495"
+
+# kubectl apply -f 2.ing-approuting-internal-controller.yaml
+# Edit default controller: 
+# kubectl edit nginxingresscontroller default -n app-routing-system

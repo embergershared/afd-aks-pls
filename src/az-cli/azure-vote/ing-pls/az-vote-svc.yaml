@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: azure-vote-front-svc
+  namespace: azure-vote
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: azure-vote-front
+  sessionAffinity: None
+  type: ClusterIP

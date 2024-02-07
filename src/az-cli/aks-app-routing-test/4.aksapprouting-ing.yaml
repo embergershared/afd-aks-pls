@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aks-app-routing-test-ing
+  namespace: aks-app-routing-test
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  # ingressClassName: ing-approuting-public
+  rules:
+  - host: aksapprouting.akspls.ebtests
+    http:
+      paths:
+      - backend:
+          service:
+            name: aks-app-routing-test-svc
+            port:
+              number: 80
+        path: /
+        pathType: Prefix

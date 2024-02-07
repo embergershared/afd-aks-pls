@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aks-app-routing-test-svc-ing-int
+  namespace: aks-app-routing-test
+  # annotations:
+  #   kubernetes.azure.com/tls-cert-keyvault-uri: https://kv-use2-446692-s4-aksfdp.vault.azure.net/certificates/aksfdpls-ebtests-ingress-tls/d33d696c8c9f4c9bb318b550c449323e
+spec:
+  ingressClassName: ing-internal
+  rules:
+  - host: aksapprouting-int.akspls.ebtests
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: aks-app-routing-test-svc
+            port:
+              number: 80
+  # tls:
+  # - hosts:
+  #   - aksapprouting-int.akspls.ebtests
+  #   secretName: keyvault-aks-app-routing-test-ing-tls-int

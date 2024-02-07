@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: httpbin-svc-ing-tls
+  namespace: httpbin
+  annotations:
+    kubernetes.azure.com/tls-cert-keyvault-uri: https://kv-use2-446692-s4-aksfdp.vault.azure.net/certificates/extended-star-ebdemos-info/13a681298d534ad28352e1de9893f613
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  rules:
+  - host: httpbin.ebdemos.info
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: httpbin-svc-clusip
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - httpbin.ebdemos.info
+    secretName: keyvault-httpbin-svc-ing-tls

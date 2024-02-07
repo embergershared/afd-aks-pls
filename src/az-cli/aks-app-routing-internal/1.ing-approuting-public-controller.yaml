@@ -1,0 +1,12 @@
+# https://learn.microsoft.com/en-us/azure/aks/app-routing-nginx-configuration#create-an-internal-nginx-ingress-controller-with-a-private-ip-address
+apiVersion: approuting.kubernetes.azure.com/v1alpha1
+kind: NginxIngressController
+metadata:
+  name: ing-approuting-public
+spec:
+  ingressClassName: ing-approuting-public
+  controllerNamePrefix: ing-approuting-public
+
+# kubectl apply -f nginx-internal-controller.yaml
+# Edit default controller: 
+# kubectl edit nginxingresscontroller default -n app-routing-system

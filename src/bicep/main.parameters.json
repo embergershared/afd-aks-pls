@@ -1,0 +1,252 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "aksClusterNetworkPlugin": {
+      "value": "azure"
+    },
+    "aksClusterNetworkPolicy": {
+      "value": "azure"
+    },
+    "aksClusterPodCidr": {
+      "value": "192.168.0.0/16"
+    },
+    "aksClusterServiceCidr": {
+      "value": "172.16.0.0/16"
+    },
+    "aksClusterDnsServiceIP": {
+      "value": "172.16.0.10"
+    },
+    "aksClusterDockerBridgeCidr": {
+      "value": "172.17.0.1/16"
+    },
+    "aksClusterOutboundType": {
+      "value": "userAssignedNATGateway"
+    },
+    "aksClusterKubernetesVersion": {
+      "value": "1.24.0"
+    },
+    "aksClusterAdminUsername": {
+      "value": "azureuser"
+    },
+    "aksClusterSshPublicKey": {
+      "value": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCiY/2qAFLrYd/+dWr7CTQkvVHYaZZG+XsLGfAZlhQqiTkkHbIjGH1NoPEfkpcXO3pBksKkMQKQmJVjSEgb16okFA8qRTPGiohk/6Ln2eFaXuZBBZLoxd+5G1kNMelZn7P7vWMKJ6dDL56Cfl7fvNQFF+tSWHpF2iTJPcdteE6h+IROwLAfSwRtmvwzi80HfW+dpgXGNYQ44skI1w1QPhMw4aEGLIkdPzro77iq2wQcktF/gxvRdpXxKK7iN0xjS7/iTNXReEZWe1qWxyycNjSrT6QRHWX0Abemmxl65VcWyCgYUPT2mWgFzw6EK3GtfnnE5gobdMR3ocd5wFl2wCSQdNdwaVbaZ7jDB/TkEt5tKfNTZHU764xfzq/4LRm1NDp5wASJNYp51m9EQz/J6artkcYYJk1XDcH4hkfgvstFXhqSAAMvX0SOEl7jjuLxGXc+235fQnpzrrr8fqHgQxIBxIuKCzavitZqp5514MW2MX4YwsWXFft54iSMcf+XsPXfG4WarScgzqiuG0QMVuOO0dlSPAr0NnzDH0PxrWra5nVLXxg06q/3k/Ygc4BjihxOSlU0iQu/l7PmsXlQ/aEEwtEwsi5Jf5xZ3Tf6hxMzuzFo+xvRB9ycJB2QQ7GLaxt0lgz/eyJBY6dJulkntLp0d9DkeYS+5T9ED2TERx7jkw== azureuser"
+      // "reference": {
+      //   "keyVault": {
+      //     "id": "/subscriptions/34144584-4817-47a0-a912-bd00bae76495/resourceGroups/rg-use2-446692-s4-aks-fd-pls/providers/Microsoft.KeyVault/vaults/kv-aks-fd-pls"
+      //   },
+      //   "secretName": "aks-fd-pls-vmss-ssh-key/05f2700ef65d4cebaaaa97b2bee63cbf"
+      // }
+    },
+    "aadProfileManaged": {
+      "value": true
+    },
+    "aadProfileEnableAzureRBAC": {
+      "value": true
+    },
+    "aadProfileAdminGroupObjectIDs": {
+      "value": [
+        "58d1f6ca-ce56-494a-809d-49ed859447ff"
+      ]
+    },
+    "systemAgentPoolName": {
+      "value": "system"
+    },
+    "systemAgentPoolVmSize": {
+      "value": "Standard_D4s_v3"
+    },
+    "systemAgentPoolOsDiskSizeGB": {
+      "value": 80
+    },
+    "systemAgentPoolAgentCount": {
+      "value": 3
+    },
+    "systemAgentPoolMaxCount": {
+      "value": 5
+    },
+    "systemAgentPoolMinCount": {
+      "value": 3
+    },
+    "systemAgentPoolNodeTaints": {
+      "value": [
+        "CriticalAddonsOnly=true:NoSchedule"
+      ]
+    },
+    "userAgentPoolName": {
+      "value": "user"
+    },
+    "userAgentPoolVmSize": {
+      "value": "Standard_D4s_v3"
+    },
+    "userAgentPoolOsDiskSizeGB": {
+      "value": 80
+    },
+    "userAgentPoolAgentCount": {
+      "value": 3
+    },
+    "userAgentPoolMaxCount": {
+      "value": 5
+    },
+    "userAgentPoolMinCount": {
+      "value": 3
+    },
+    "enableVnetIntegration": {
+      "value": true
+    },
+    "virtualNetworkAddressPrefixes": {
+      "value": "10.0.0.0/8"
+    },
+    "systemAgentPoolSubnetName": {
+      "value": "SystemSubnet"
+    },
+    "systemAgentPoolSubnetAddressPrefix": {
+      "value": "10.240.0.0/16"
+    },
+    "userAgentPoolSubnetName": {
+      "value": "UserSubnet"
+    },
+    "userAgentPoolSubnetAddressPrefix": {
+      "value": "10.241.0.0/16"
+    },
+    "podSubnetName": {
+      "value": "PodSubnet"
+    },
+    "podSubnetAddressPrefix": {
+      "value": "10.242.0.0/16"
+    },
+    "apiServerSubnetName": {
+      "value": "ApiServerSubnet"
+    },
+    "apiServerSubnetAddressPrefix": {
+      "value": "10.243.0.0/27"
+    },
+    "vmSubnetName": {
+      "value": "VmSubnet"
+    },
+    "vmSubnetAddressPrefix": {
+      "value": "10.243.1.0/24"
+    },
+    "bastionSubnetAddressPrefix": {
+      "value": "10.243.2.0/24"
+    },
+    "logAnalyticsSku": {
+      "value": "PerGB2018"
+    },
+    "logAnalyticsRetentionInDays": {
+      "value": 60
+    },
+    "vmName": {
+      "value": "TestVm"
+    },
+    "vmSize": {
+      "value": "Standard_F4s_v2"
+    },
+    "imagePublisher": {
+      "value": "Canonical"
+    },
+    "imageOffer": {
+      "value": "0001-com-ubuntu-server-jammy"
+    },
+    "imageSku": {
+      "value": "22_04-lts-gen2"
+    },
+    "authenticationType": {
+      "value": "password"
+    },
+    "vmAdminUsername": {
+      "value": "azadmin"
+    },
+    "vmAdminPasswordOrKey": {
+      "value": "opker927twhejtr&3gf"
+    },
+    "diskStorageAccounType": {
+      "value": "Premium_LRS"
+    },
+    "numDataDisks": {
+      "value": 1
+    },
+    "osDiskSize": {
+      "value": 50
+    },
+    "dataDiskSize": {
+      "value": 50
+    },
+    "dataDiskCaching": {
+      "value": "ReadWrite"
+    },
+    "aksClusterEnablePrivateCluster": {
+      "value": false
+    },
+    "aksEnablePrivateClusterPublicFQDN": {
+      "value": false
+    },
+    "podIdentityProfileEnabled": {
+      "value": false
+    },
+    // "keyVaultObjectIds": {
+    //   "value": [
+    //     "<aad-security-group-or-account-object-id>"
+    //   ]
+    // },
+    "keyVaultName": {
+      "value": "kv-aks-fd-pls"
+    },
+    "openServiceMeshEnabled": {
+      "value": true
+    },
+    "kedaEnabled": {
+      "value": true
+    },
+    "daprEnabled": {
+      "value": false
+    },
+    "fluxGitOpsEnabled": {
+      "value": false
+    },
+    "verticalPodAutoscalerEnabled": {
+      "value": true
+    },
+    "deploymentScriptUri": {
+      "value": "https://paolosalvatori.blob.core.windows.net/scripts/install-helm-charts-and-app.sh"
+    },
+    "blobCSIDriverEnabled": {
+      "value": true
+    },
+    "diskCSIDriverEnabled": {
+      "value": true
+    },
+    "fileCSIDriverEnabled": {
+      "value": true
+    },
+    "snapshotControllerEnabled": {
+      "value": false
+    },
+    "defenderSecurityMonitoringEnabled": {
+      "value": false
+    },
+    "imageCleanerEnabled": {
+      "value": true
+    },
+    "imageCleanerIntervalHours": {
+      "value": 24
+    },
+    "nodeRestrictionEnabled": {
+      "value": true
+    },
+    "workloadIdentityEnabled": {
+      "value": true
+    },
+    "oidcIssuerProfileEnabled": {
+      "value": true
+    },
+    "hostName": {
+      "value": "httpbin.local"
+    },
+    "namespace": {
+      "value": "httpbin"
+    },
+    "acrName": {
+      "value": "acraksfdpls05"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: azure-vote-front-ing
+  namespace: azure-vote
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: azure-vote.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: azure-vote-front-svc
+                port:
+                  number: 80

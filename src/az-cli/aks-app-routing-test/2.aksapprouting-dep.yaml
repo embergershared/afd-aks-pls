@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aks-app-routing-test-dep
+  namespace: aks-app-routing-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aks-app-routing-test
+  template:
+    metadata:
+      labels:
+        app: aks-app-routing-test
+    spec:
+      containers:
+      - name: aks-app-routing-test
+        image: mcr.microsoft.com/azuredocs/aks-helloworld:v1
+        ports:
+        - containerPort: 80
+        env:
+        - name: TITLE
+          value: "Fully tested AKS App Routing add'on with TLS on aks-use2-446692-s4-aks-fd-pls-02."
