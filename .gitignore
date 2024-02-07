@@ -10,6 +10,10 @@
 
 # ARM Subscriptions secrets
 **/*_secret.json
+*secret*
+
+# Certificates
+*.pfx
 
 # Terraform Providers version locks
 **/.terraform.lock.hcl
@@ -20,11 +24,11 @@
 # Sourced Plans Terraform files
 **/srcd-*.tf
 
-# All tfvars files
-*tfvars*
-# Except the ones in subscriptions/azint subfolders
-!subscriptions/azint/**/*tfvars*
-!446692/**/*tfvars*
+# # All tfvars files
+# *tfvars*
+# # Except the ones in subscriptions/azint subfolders
+# !subscriptions/azint/**/*tfvars*
+# !446692/**/*tfvars*
 
 # Ignore /various folder
 various/
