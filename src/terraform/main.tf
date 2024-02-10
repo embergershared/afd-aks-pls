@@ -105,6 +105,23 @@ resource "azurerm_private_dns_zone_virtual_network_link" "this" {
   registration_enabled  = false
 }
 
+##### AKS
+resource "azurerm_kubernetes_cluster" "this" {
+  name                = "aks-${var.aks_suffix}"
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
+  # dns_prefix              = "aks-${var.app_prefix}"
+  kubernetes_version      = "1.27.7"
+  private_cluster_enabled = false
+  network_profile {
+    network_plugin = "azure"
+  }
+  default_node_pool {
+    name       = "default"
+    node_count = 3
+    vm_size    = "Standard_D2s_v3"
+  }
+}
 
 ##### Azure Front Door
 resource "azurerm_cdn_frontdoor_profile" "this" {

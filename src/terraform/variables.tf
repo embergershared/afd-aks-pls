@@ -7,6 +7,7 @@ variable "client_secret" {}
 
 # Base settings
 variable "app_prefix" {}
+variable "aks_suffix" {}
 variable "location" {}
 
 # TLS Certificate
