@@ -106,7 +106,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "this" {
 }
 
 
-# Azure Front Door
+##### Azure Front Door
 resource "azurerm_cdn_frontdoor_profile" "this" {
   name                     = "afd-use2-446692-s4-aks-fd-pls-02"
   resource_group_name      = azurerm_resource_group.this.name
@@ -114,6 +114,7 @@ resource "azurerm_cdn_frontdoor_profile" "this" {
   response_timeout_seconds = 60
 }
 
+# Endpoints
 resource "azurerm_cdn_frontdoor_endpoint" "ep_1" {
   # https://aksafdpls-g2dqh6dvctcmgdfb.b01.azurefd.net/
 
@@ -191,7 +192,6 @@ resource "azurerm_cdn_frontdoor_origin" "int_httpbin" {
   }
 }
 
-
 # External/Public-ingress Origin group
 resource "azurerm_cdn_frontdoor_origin_group" "ext_ing" {
   name                     = "external-ingresses"
@@ -238,7 +238,7 @@ resource "azurerm_cdn_frontdoor_origin" "ext_httpbin" {
   weight                         = 1000
 }
 
-
+# TLS certificate for AFD endpoint
 resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
   name                     = "test-ebdemos-info"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
@@ -253,6 +253,7 @@ resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
   }
 }
 
+# To Internal ingress
 resource "azurerm_dns_cname_record" "testint_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
@@ -301,7 +302,7 @@ resource "azurerm_cdn_frontdoor_route" "int_route" {
 }
 # https://testint.ebdemos.info
 
-
+# To Public ingress
 resource "azurerm_dns_cname_record" "testext_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
