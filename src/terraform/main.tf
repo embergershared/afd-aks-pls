@@ -111,15 +111,52 @@ resource "azurerm_kubernetes_cluster" "this" {
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
   # dns_prefix              = "aks-${var.app_prefix}"
-  kubernetes_version      = "1.27.7"
-  private_cluster_enabled = false
+  kubernetes_version               = "1.27.7"
+  private_cluster_enabled          = false
+  dns_prefix                       = "aks-use2-4-rg-use2-446692-s-341445"
+  oidc_issuer_enabled              = false
+  open_service_mesh_enabled        = false
+  http_application_routing_enabled = false
+  automatic_channel_upgrade        = "node-image"
+  local_account_disabled           = true
+  image_cleaner_enabled            = false
+  image_cleaner_interval_hours     = 48
+
+  azure_active_directory_role_based_access_control {
+    admin_group_object_ids = [
+      "58d1f6ca-ce56-494a-809d-49ed859447ff",
+    ]
+    azure_rbac_enabled = true
+    managed            = true
+    tenant_id          = "8c0e4ef1-25fa-4e52-b8da-835de296826e"
+  }
+  identity {
+    type = "SystemAssigned"
+  }
   network_profile {
     network_plugin = "azure"
   }
   default_node_pool {
-    name       = "default"
-    node_count = 3
-    vm_size    = "Standard_D2s_v3"
+    name                 = "system"
+    node_count           = 4
+    vm_size              = "Standard_B2s"
+    max_pods             = 150
+    kubelet_disk_type    = "OS"
+    orchestrator_version = "1.27.7"
+    os_disk_size_gb      = 128
+    os_sku               = "Ubuntu"
+    pod_subnet_id        = "/subscriptions/34144584-4817-47a0-a912-bd00bae76495/resourceGroups/rg-use2-446692-s4-aksfdpls-02/providers/Microsoft.Network/virtualNetworks/vnet-use2-446692-s4-aksfdpls-02/subnets/aks-pod-snet"
+    vnet_subnet_id       = "/subscriptions/34144584-4817-47a0-a912-bd00bae76495/resourceGroups/rg-use2-446692-s4-aksfdpls-02/providers/Microsoft.Network/virtualNetworks/vnet-use2-446692-s4-aksfdpls-02/subnets/aks-systempool-snet"
+    workload_runtime     = "OCIContainer"
+    zones                = []
+  }
+
+  key_vault_secrets_provider {
+    secret_rotation_enabled  = false
+    secret_rotation_interval = "2m"
+  }
+  web_app_routing {
+    dns_zone_id = ""
   }
 }
 
