@@ -1,10 +1,10 @@
 resource "azurerm_resource_group" "this" {
-  name     = "rg-${var.app_prefix}"
+  name     = "rg-${var.loc_sub}-${var.res_suffix}"
   location = var.location
 }
 
 resource "azurerm_storage_account" "this" {
-  name                     = "stlogsdiagsaksafd"
+  name                     = substr(replace("st-${var.res_suffix}", "-", ""), 0, 24)
   resource_group_name      = azurerm_resource_group.this.name
   location                 = azurerm_resource_group.this.location
   account_tier             = "Standard"
@@ -13,9 +13,22 @@ resource "azurerm_storage_account" "this" {
   allow_nested_items_to_be_public  = false
   cross_tenant_replication_enabled = false
 }
+#   / Main location storage account Networking rules
+resource "azurerm_storage_account_network_rules" "this" {
+  # Prevents locking the Storage Account before all resources are created
+  depends_on = [
+    azurerm_storage_account.this
+  ]
+
+  storage_account_id         = azurerm_storage_account.this.id
+  default_action             = "Deny"
+  ip_rules                   = [local.public_ip]
+  virtual_network_subnet_ids = []
+  bypass                     = ["AzureServices"]
+}
 
 resource "azurerm_key_vault" "this" {
-  name                = "kv-use2-446692-s4-aksfdp"
+  name                = substr(lower("kv-${var.res_suffix}"), 0, 24)
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
   tenant_id           = var.tenant_id
@@ -40,22 +53,22 @@ resource "azurerm_key_vault_certificate" "this" {
 }
 
 resource "azurerm_virtual_network" "this" {
-  name                = "vnet-${var.app_prefix}"
+  name                = "vnet-${var.res_suffix}"
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
-  address_space       = ["10.0.0.0/19"]
+  address_space       = ["192.168.0.0/22"]
 }
 resource "azurerm_subnet" "user_np_nodes" {
   name                 = "aks-userpool-snet"
   resource_group_name  = azurerm_resource_group.this.name
   virtual_network_name = azurerm_virtual_network.this.name
-  address_prefixes     = ["10.0.2.0/24"]
+  address_prefixes     = ["192.168.2.0/24"]
 }
 resource "azurerm_subnet" "pods" {
   name                 = "aks-pod-snet"
   resource_group_name  = azurerm_resource_group.this.name
   virtual_network_name = azurerm_virtual_network.this.name
-  address_prefixes     = ["10.0.8.0/21"]
+  address_prefixes     = ["192.168.3.0/24"]
   delegation {
     name = "Microsoft.ContainerService.managedClusters"
     service_delegation {
@@ -67,16 +80,21 @@ resource "azurerm_subnet" "pods" {
   }
 }
 resource "azurerm_subnet" "system_np_nodes" {
-  name                 = "aks-systempool-snet"
+  name                 = "aks-syspool-snet"
   resource_group_name  = azurerm_resource_group.this.name
   virtual_network_name = azurerm_virtual_network.this.name
-  address_prefixes     = ["10.0.1.0/24"]
+  address_prefixes     = ["192.168.1.0/24"]
+
+  private_endpoint_network_policies_enabled     = false
+  private_link_service_network_policies_enabled = false
+  service_endpoint_policy_ids                   = null
+  service_endpoints                             = null
 }
 resource "azurerm_subnet" "ilb" {
   name                 = "aks-ilb-snet"
   resource_group_name  = azurerm_resource_group.this.name
   virtual_network_name = azurerm_virtual_network.this.name
-  address_prefixes     = ["10.0.3.0/24"]
+  address_prefixes     = ["192.168.0.0/24"]
 }
 
 resource "azurerm_private_dns_zone" "this" {
@@ -107,13 +125,13 @@ resource "azurerm_private_dns_zone_virtual_network_link" "this" {
 
 ##### AKS
 resource "azurerm_kubernetes_cluster" "this" {
-  name                = "aks-${var.aks_suffix}"
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  # dns_prefix              = "aks-${var.app_prefix}"
+  name                             = "aks-${var.res_suffix}"
+  location                         = azurerm_resource_group.this.location
+  resource_group_name              = azurerm_resource_group.this.name
+  node_resource_group              = "${azurerm_resource_group.this.name}-managed"
   kubernetes_version               = "1.27.7"
   private_cluster_enabled          = false
-  dns_prefix                       = "aks-use2-4-rg-use2-446692-s-341445"
+  dns_prefix                       = "aks-${var.res_suffix}-dns"
   oidc_issuer_enabled              = false
   open_service_mesh_enabled        = false
   http_application_routing_enabled = false
@@ -122,13 +140,17 @@ resource "azurerm_kubernetes_cluster" "this" {
   image_cleaner_enabled            = false
   image_cleaner_interval_hours     = 48
 
+  api_server_access_profile {
+    authorized_ip_ranges     = ["${local.public_ip}/32"]
+    vnet_integration_enabled = false
+  }
   azure_active_directory_role_based_access_control {
     admin_group_object_ids = [
-      "58d1f6ca-ce56-494a-809d-49ed859447ff",
+      var.aks_admins_group,
     ]
     azure_rbac_enabled = true
     managed            = true
-    tenant_id          = "8c0e4ef1-25fa-4e52-b8da-835de296826e"
+    tenant_id          = var.tenant_id
   }
   identity {
     type = "SystemAssigned"
@@ -145,24 +167,22 @@ resource "azurerm_kubernetes_cluster" "this" {
     orchestrator_version = "1.27.7"
     os_disk_size_gb      = 128
     os_sku               = "Ubuntu"
-    pod_subnet_id        = "/subscriptions/34144584-4817-47a0-a912-bd00bae76495/resourceGroups/rg-use2-446692-s4-aksfdpls-02/providers/Microsoft.Network/virtualNetworks/vnet-use2-446692-s4-aksfdpls-02/subnets/aks-pod-snet"
-    vnet_subnet_id       = "/subscriptions/34144584-4817-47a0-a912-bd00bae76495/resourceGroups/rg-use2-446692-s4-aksfdpls-02/providers/Microsoft.Network/virtualNetworks/vnet-use2-446692-s4-aksfdpls-02/subnets/aks-systempool-snet"
-    workload_runtime     = "OCIContainer"
-    zones                = []
+    # os_disk_type         = "Ephemeral"
+    vnet_subnet_id   = azurerm_subnet.system_np_nodes.id
+    pod_subnet_id    = azurerm_subnet.pods.id
+    workload_runtime = "OCIContainer"
+    zones            = []
   }
 
   key_vault_secrets_provider {
     secret_rotation_enabled  = false
     secret_rotation_interval = "2m"
   }
-  web_app_routing {
-    dns_zone_id = ""
-  }
 }
 
 ##### Azure Front Door
 resource "azurerm_cdn_frontdoor_profile" "this" {
-  name                     = "afd-use2-446692-s4-aks-fd-pls-02"
+  name                     = "afd-${var.res_suffix}"
   resource_group_name      = azurerm_resource_group.this.name
   sku_name                 = "Premium_AzureFrontDoor"
   response_timeout_seconds = 60
@@ -189,62 +209,62 @@ resource "azurerm_cdn_frontdoor_endpoint" "ep_2" {
 }
 
 # Internal/Private-ingress Origin group
-resource "azurerm_cdn_frontdoor_origin_group" "int_ing" {
-  name                     = "internal-ingresses"
-  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  session_affinity_enabled = false
+# resource "azurerm_cdn_frontdoor_origin_group" "int_ing" {
+#   name                     = "internal-ingresses"
+#   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
+#   session_affinity_enabled = false
 
-  health_probe {
-    interval_in_seconds = 100
-    path                = "/"
-    protocol            = "Https"
-    request_type        = "GET"
-  }
+#   health_probe {
+#     interval_in_seconds = 100
+#     path                = "/"
+#     protocol            = "Https"
+#     request_type        = "GET"
+#   }
 
-  load_balancing {
-    additional_latency_in_milliseconds = 50
-    sample_size                        = 4
-    successful_samples_required        = 3
-  }
+#   load_balancing {
+#     additional_latency_in_milliseconds = 50
+#     sample_size                        = 4
+#     successful_samples_required        = 3
+#   }
 
-  lifecycle {
-    ignore_changes = [cdn_frontdoor_profile_id]
-  }
-}
-resource "azurerm_cdn_frontdoor_origin" "int_azvote" {
-  name                          = "azvote-int"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
+#   lifecycle {
+#     ignore_changes = [cdn_frontdoor_profile_id]
+#   }
+# }
+# resource "azurerm_cdn_frontdoor_origin" "int_azvote" {
+#   name                          = "azvote-int"
+#   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
 
-  enabled                        = true
-  certificate_name_check_enabled = true
-  host_name                      = "azvote.int.ebdemos.info"
-  origin_host_header             = "azvote.int.ebdemos.info"
-  priority                       = 1
-  weight                         = 1000
+#   enabled                        = true
+#   certificate_name_check_enabled = true
+#   host_name                      = "azvote.int.ebdemos.info"
+#   origin_host_header             = "azvote.int.ebdemos.info"
+#   priority                       = 1
+#   weight                         = 1000
 
-  private_link {
-    request_message        = "Please approve"
-    location               = azurerm_resource_group.this.location
-    private_link_target_id = data.azurerm_private_link_service.priv_ing_pls.id
-  }
-}
-resource "azurerm_cdn_frontdoor_origin" "int_httpbin" {
-  name                          = "httpbin-int"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
+#   # private_link {
+#   #   request_message        = "Please approve"
+#   #   location               = azurerm_resource_group.this.location
+#   #   private_link_target_id = data.azurerm_private_link_service.priv_ing_pls.id
+#   # }
+# }
+# resource "azurerm_cdn_frontdoor_origin" "int_httpbin" {
+#   name                          = "httpbin-int"
+#   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
 
-  enabled                        = false
-  certificate_name_check_enabled = true
-  host_name                      = "httpbin.int.ebdemos.info"
-  origin_host_header             = "httpbin.int.ebdemos.info"
-  priority                       = 1
-  weight                         = 1000
+#   enabled                        = false
+#   certificate_name_check_enabled = true
+#   host_name                      = "httpbin.int.ebdemos.info"
+#   origin_host_header             = "httpbin.int.ebdemos.info"
+#   priority                       = 1
+#   weight                         = 1000
 
-  private_link {
-    request_message        = "Please approve"
-    location               = azurerm_resource_group.this.location
-    private_link_target_id = data.azurerm_private_link_service.priv_ing_pls.id
-  }
-}
+#   # private_link {
+#   #   request_message        = "Please approve"
+#   #   location               = azurerm_resource_group.this.location
+#   #   private_link_target_id = data.azurerm_private_link_service.priv_ing_pls.id
+#   # }
+# }
 
 # External/Public-ingress Origin group
 resource "azurerm_cdn_frontdoor_origin_group" "ext_ing" {
@@ -308,52 +328,52 @@ resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
 }
 
 # To Internal ingress
-resource "azurerm_dns_cname_record" "testint_ebdemos_info" {
-  provider = azurerm.s2-connectivity
+# resource "azurerm_dns_cname_record" "testint_ebdemos_info" {
+#   provider = azurerm.s2-connectivity
 
-  name                = "testint"
-  zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
-  resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
-  ttl                 = 60
-  record              = azurerm_cdn_frontdoor_endpoint.ep_1.host_name
-}
-resource "azurerm_cdn_frontdoor_custom_domain" "testint_ebdemos_info" {
-  name                     = "${azurerm_dns_cname_record.testint_ebdemos_info.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
-  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id
-  host_name                = "${azurerm_dns_cname_record.testint_ebdemos_info.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
-  # https://testext.ebdemos.info
+#   name                = "testint"
+#   zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
+#   resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
+#   ttl                 = 60
+#   record              = azurerm_cdn_frontdoor_endpoint.ep_1.host_name
+# }
+# resource "azurerm_cdn_frontdoor_custom_domain" "testint_ebdemos_info" {
+#   name                     = "${azurerm_dns_cname_record.testint_ebdemos_info.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
+#   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
+#   dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id
+#   host_name                = "${azurerm_dns_cname_record.testint_ebdemos_info.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
+#   # https://testext.ebdemos.info
 
-  tls {
-    certificate_type        = "CustomerCertificate"
-    minimum_tls_version     = "TLS12"
-    cdn_frontdoor_secret_id = azurerm_cdn_frontdoor_secret.tls_cert.id
-  }
-  lifecycle {
-    ignore_changes = [cdn_frontdoor_profile_id]
-  }
-}
-resource "azurerm_cdn_frontdoor_route" "int_route" {
-  name                      = "rt-to-int-origins"
-  cdn_frontdoor_endpoint_id = azurerm_cdn_frontdoor_endpoint.ep_1.id
-  enabled                   = true
+#   tls {
+#     certificate_type        = "CustomerCertificate"
+#     minimum_tls_version     = "TLS12"
+#     cdn_frontdoor_secret_id = azurerm_cdn_frontdoor_secret.tls_cert.id
+#   }
+#   lifecycle {
+#     ignore_changes = [cdn_frontdoor_profile_id]
+#   }
+# }
+# resource "azurerm_cdn_frontdoor_route" "int_route" {
+#   name                      = "rt-to-int-origins"
+#   cdn_frontdoor_endpoint_id = azurerm_cdn_frontdoor_endpoint.ep_1.id
+#   enabled                   = true
 
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
-  cdn_frontdoor_origin_ids = [
-    azurerm_cdn_frontdoor_origin.int_azvote.id,
-    azurerm_cdn_frontdoor_origin.int_httpbin.id,
-  ]
+#   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
+#   cdn_frontdoor_origin_ids = [
+#     azurerm_cdn_frontdoor_origin.int_azvote.id,
+#     azurerm_cdn_frontdoor_origin.int_httpbin.id,
+#   ]
 
-  forwarding_protocol    = "HttpsOnly"
-  https_redirect_enabled = false
-  patterns_to_match      = ["/*"]
-  supported_protocols    = ["Https"]
+#   forwarding_protocol    = "HttpsOnly"
+#   https_redirect_enabled = false
+#   patterns_to_match      = ["/*"]
+#   supported_protocols    = ["Https"]
 
-  cdn_frontdoor_custom_domain_ids = [
-    azurerm_cdn_frontdoor_custom_domain.testint_ebdemos_info.id,
-  ]
-  # link_to_default_domain = true
-}
+#   cdn_frontdoor_custom_domain_ids = [
+#     azurerm_cdn_frontdoor_custom_domain.testint_ebdemos_info.id,
+#   ]
+#   # link_to_default_domain = true
+# }
 # https://testint.ebdemos.info
 
 # To Public ingress
@@ -367,6 +387,8 @@ resource "azurerm_dns_cname_record" "testext_ebdemos_info" {
   record              = azurerm_cdn_frontdoor_endpoint.ep_2.host_name
 }
 resource "azurerm_cdn_frontdoor_custom_domain" "testext_ebdemos_info" {
+  depends_on = [azurerm_cdn_frontdoor_secret.tls_cert]
+
   name                     = "${azurerm_dns_cname_record.testext_ebdemos_info.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
   dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id

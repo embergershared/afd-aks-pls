@@ -4,10 +4,11 @@ variable "subsc_id" {}
 variable "conn_subsc_id" {}
 variable "client_id" {}
 variable "client_secret" {}
+variable "aks_admins_group" {}
 
 # Base settings
-variable "app_prefix" {}
-variable "aks_suffix" {}
+variable "res_suffix" {}
+variable "loc_sub" {}
 variable "location" {}
 
 # TLS Certificate
