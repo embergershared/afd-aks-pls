@@ -210,8 +210,24 @@ resource "helm_release" "ing_ctrl_public" {
     "${file("ing-public-values.yaml")}"
   ]
 }
+
+
+# resource "azurerm_role_assignment" "ilb_subnet_rassignment" {
+#   principal_id         = azurerm_kubernetes_cluster.this.identity[0].principal_id
+#   role_definition_name = "Network Contributor"
+#   scope                = azurerm_subnet.ilb.id
+# }
+resource "azurerm_role_assignment" "syspool_subnet_rassignment" {
+  principal_id         = azurerm_kubernetes_cluster.this.identity[0].principal_id
+  role_definition_name = "Network Contributor"
+  scope                = azurerm_subnet.system_np_nodes.id
+}
+
 resource "helm_release" "ing_ctrl_internal" {
-  depends_on = [null_resource.helm_update]
+  depends_on = [
+    null_resource.helm_update,
+    azurerm_role_assignment.ilb_subnet_rassignment,
+  ]
 
   name             = "ingress-internal"
   namespace        = "ingress-internal"

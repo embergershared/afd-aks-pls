@@ -16,4 +16,3 @@ variable "pfx_cert_name" {}
 variable "pfx_cert_password" {}
 
 variable "dns_zone_id" {}
-variable "aks_managed_rg_name" {}
