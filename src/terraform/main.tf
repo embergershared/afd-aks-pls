@@ -187,6 +187,21 @@ resource "azurerm_cdn_frontdoor_profile" "this" {
   sku_name                 = "Premium_AzureFrontDoor"
   response_timeout_seconds = 60
 }
+resource "azapi_update_resource" "frontdoor_profile_system_identity" {
+  type        = "Microsoft.Cdn/profiles@2023-02-01-preview"
+  resource_id = azurerm_cdn_frontdoor_profile.this.id
+  body = jsonencode({
+    "identity" : {
+      "type" : "SystemAssigned"
+    }
+  })
+  response_export_values = ["identity.principalId", "identity.tenantId"]
+}
+resource "azurerm_role_assignment" "frontdoor_profile_system_identity" {
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = jsondecode(azapi_update_resource.frontdoor_profile_system_identity.output).identity.principalId
+}
 
 # Endpoints
 resource "azurerm_cdn_frontdoor_endpoint" "ep_1" {
