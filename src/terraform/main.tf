@@ -226,7 +226,8 @@ resource "azurerm_role_assignment" "syspool_subnet_rassignment" {
 resource "helm_release" "ing_ctrl_internal" {
   depends_on = [
     null_resource.helm_update,
-    azurerm_role_assignment.ilb_subnet_rassignment,
+    # azurerm_role_assignment.ilb_subnet_rassignment,
+    azurerm_role_assignment.syspool_subnet_rassignment,
   ]
 
   name             = "ingress-internal"
