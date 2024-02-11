@@ -11,5 +11,10 @@ terraform {
       source  = "Azure/azapi"
       version = "~> 1.0"
     }
+    helm = {
+      # https://registry.terraform.io/providers/hashicorp/helm/latest
+      source  = "hashicorp/helm"
+      version = ">=2.10"
+    }
   }
 }

@@ -180,6 +180,53 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 }
 
+##### Deploy AKS ingress controller
+# helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+# helm repo update
+resource "null_resource" "helm_add_repo" {
+  provisioner "local-exec" {
+    command = "helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx"
+  }
+}
+resource "null_resource" "helm_update" {
+  depends_on = [null_resource.helm_add_repo]
+  provisioner "local-exec" {
+    command = "helm repo update"
+  }
+}
+
+resource "helm_release" "ing_ctrl_public" {
+  depends_on = [null_resource.helm_update]
+
+  name             = "ingress-public"
+  namespace        = "ingress-public"
+  create_namespace = true
+
+  repository = "https://kubernetes.github.io/ingress-nginx"
+  chart      = "ingress-nginx"
+  version    = "v4.9.1"
+
+  values = [
+    "${file("ing-public-values.yaml")}"
+  ]
+}
+resource "helm_release" "ing_ctrl_internal" {
+  depends_on = [null_resource.helm_update]
+
+  name             = "ingress-internal"
+  namespace        = "ingress-internal"
+  create_namespace = true
+
+  repository = "https://kubernetes.github.io/ingress-nginx"
+  chart      = "ingress-nginx"
+  version    = "v4.9.1"
+
+  values = [
+    "${file("ing-internal-values.yaml")}"
+  ]
+}
+
+
 ##### Azure Front Door
 resource "azurerm_cdn_frontdoor_profile" "this" {
   name                     = "afd-${var.res_suffix}"
@@ -198,6 +245,8 @@ resource "azapi_update_resource" "frontdoor_profile_system_identity" {
   response_export_values = ["identity.principalId", "identity.tenantId"]
 }
 resource "azurerm_role_assignment" "frontdoor_profile_system_identity" {
+  depends_on = [azapi_update_resource.frontdoor_profile_system_identity]
+
   scope                = azurerm_key_vault.this.id
   role_definition_name = "Key Vault Secrets User"
   principal_id         = jsondecode(azapi_update_resource.frontdoor_profile_system_identity.output).identity.principalId
@@ -209,18 +258,12 @@ resource "azurerm_cdn_frontdoor_endpoint" "ep_1" {
 
   name                     = "aksafdpls1"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  lifecycle {
-    ignore_changes = [cdn_frontdoor_profile_id]
-  }
 }
 resource "azurerm_cdn_frontdoor_endpoint" "ep_2" {
   # https://aksafdpls-g2dqh6dvctcmgdfb.b01.azurefd.net/
 
   name                     = "aksafdpls2"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  lifecycle {
-    ignore_changes = [cdn_frontdoor_profile_id]
-  }
 }
 
 # Internal/Private-ingress Origin group
@@ -240,10 +283,6 @@ resource "azurerm_cdn_frontdoor_endpoint" "ep_2" {
 #     additional_latency_in_milliseconds = 50
 #     sample_size                        = 4
 #     successful_samples_required        = 3
-#   }
-
-#   lifecycle {
-#     ignore_changes = [cdn_frontdoor_profile_id]
 #   }
 # }
 # resource "azurerm_cdn_frontdoor_origin" "int_azvote" {
@@ -299,10 +338,6 @@ resource "azurerm_cdn_frontdoor_origin_group" "ext_ing" {
     sample_size                        = 4
     successful_samples_required        = 3
   }
-
-  lifecycle {
-    ignore_changes = [cdn_frontdoor_profile_id]
-  }
 }
 resource "azurerm_cdn_frontdoor_origin" "ext_azvote" {
   name                          = "azvote-ext"
@@ -329,6 +364,8 @@ resource "azurerm_cdn_frontdoor_origin" "ext_httpbin" {
 
 # TLS certificate for AFD endpoint
 resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
+  depends_on = [azurerm_role_assignment.frontdoor_profile_system_identity]
+
   name                     = "test-ebdemos-info"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
 
@@ -336,9 +373,6 @@ resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
     customer_certificate {
       key_vault_certificate_id = azurerm_key_vault_certificate.this.id
     }
-  }
-  lifecycle {
-    ignore_changes = [cdn_frontdoor_profile_id]
   }
 }
 
@@ -363,10 +397,6 @@ resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
 #     certificate_type        = "CustomerCertificate"
 #     minimum_tls_version     = "TLS12"
 #     cdn_frontdoor_secret_id = azurerm_cdn_frontdoor_secret.tls_cert.id
-#   }
-#   lifecycle {
-#     ignore_changes = [cdn_frontdoor_profile_id]
-#   }
 # }
 # resource "azurerm_cdn_frontdoor_route" "int_route" {
 #   name                      = "rt-to-int-origins"
@@ -414,9 +444,6 @@ resource "azurerm_cdn_frontdoor_custom_domain" "testext_ebdemos_info" {
     certificate_type        = "CustomerCertificate"
     minimum_tls_version     = "TLS12"
     cdn_frontdoor_secret_id = azurerm_cdn_frontdoor_secret.tls_cert.id
-  }
-  lifecycle {
-    ignore_changes = [cdn_frontdoor_profile_id]
   }
 }
 resource "azurerm_cdn_frontdoor_route" "ext_route" {
