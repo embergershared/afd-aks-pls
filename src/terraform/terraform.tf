@@ -16,5 +16,10 @@ terraform {
       source  = "hashicorp/helm"
       version = ">=2.10"
     }
+    kubernetes = {
+      # https://registry.terraform.io/providers/hashicorp/kubernetes/latest
+      source  = "hashicorp/kubernetes"
+      version = ">=2.25"
+    }
   }
 }

@@ -264,6 +264,55 @@ resource "helm_release" "ing_ctrl_internal" {
 }
 
 
+##### Deploy the Apps for the test
+# / Httpbin
+resource "kubernetes_manifest" "httpbin_ns" {
+  manifest = yamldecode(file("httpbin/1.httpbin-ns.yaml"))
+}
+resource "kubernetes_manifest" "httpbin_dep" {
+  depends_on = [kubernetes_manifest.httpbin_ns]
+  manifest   = yamldecode(file("httpbin/2.httpbin-dep.yaml"))
+}
+resource "kubernetes_manifest" "httpbin_svc" {
+  depends_on = [kubernetes_manifest.httpbin_dep]
+  manifest   = yamldecode(file("httpbin/3.httpbin-svc-clusip.yaml"))
+}
+
+# / Azure vote
+resource "kubernetes_manifest" "azvote_ns" {
+  manifest = yamldecode(file("azure-vote/1.az-vote-ns.yaml"))
+}
+resource "kubernetes_manifest" "azvote_back_dep" {
+  depends_on = [kubernetes_manifest.azvote_ns]
+  manifest   = yamldecode(file("azure-vote/2.az-vote-back-dep.yaml"))
+}
+resource "kubernetes_manifest" "azvote_back_svc" {
+  depends_on = [kubernetes_manifest.azvote_back_dep]
+  manifest   = yamldecode(file("azure-vote/3.az-vote-back-svc.yaml"))
+}
+resource "kubernetes_manifest" "azvote_front_dep" {
+  depends_on = [kubernetes_manifest.azvote_ns]
+  manifest   = yamldecode(file("azure-vote/4.az-vote-front-dep.yaml"))
+}
+resource "kubernetes_manifest" "azvote_front_svc" {
+  depends_on = [kubernetes_manifest.azvote_front_dep]
+  manifest   = yamldecode(file("azure-vote/5.az-vote-front-svc-clusip.yaml"))
+}
+
+# / Hello AKS
+resource "kubernetes_manifest" "helloaks_ns" {
+  manifest = yamldecode(file("hello-aks/1.hello-aks-ns.yaml"))
+}
+resource "kubernetes_manifest" "helloaks_dep" {
+  depends_on = [kubernetes_manifest.helloaks_ns]
+  manifest   = yamldecode(file("hello-aks/2.hello-aks-dep.yaml"))
+}
+resource "kubernetes_manifest" "helloaks_svc" {
+  depends_on = [kubernetes_manifest.helloaks_dep]
+  manifest   = yamldecode(file("hello-aks/3.hello-aks-svc-clusip.yaml"))
+}
+
+
 ##### Azure Front Door
 resource "azurerm_cdn_frontdoor_profile" "this" {
   name                     = "afd-${var.res_suffix}"

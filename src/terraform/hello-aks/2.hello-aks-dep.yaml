@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-aks-dep
+  namespace: hello-aks
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello-aks
+  template:
+    metadata:
+      labels:
+        app: hello-aks
+    spec:
+      containers:
+      - name: hello-aks
+        image: mcr.microsoft.com/azuredocs/aks-helloworld:v1
+        ports:
+        - containerPort: 80
+        env:
+        - name: TITLE
+          value: "Hello AKS!"
