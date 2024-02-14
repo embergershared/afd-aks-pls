@@ -132,12 +132,13 @@ resource "azurerm_kubernetes_cluster" "this" {
   kubernetes_version               = "1.27.7"
   private_cluster_enabled          = false
   dns_prefix                       = "aks-${var.res_suffix}-dns"
-  oidc_issuer_enabled              = false
+  oidc_issuer_enabled              = true
+  workload_identity_enabled        = true
   open_service_mesh_enabled        = false
   http_application_routing_enabled = false
   automatic_channel_upgrade        = "node-image"
   local_account_disabled           = true
-  image_cleaner_enabled            = false
+  image_cleaner_enabled            = true
   image_cleaner_interval_hours     = 48
 
   api_server_access_profile {
@@ -195,37 +196,130 @@ resource "null_resource" "helm_update" {
   }
 }
 
-resource "helm_release" "ing_ctrl_public" {
-  depends_on = [null_resource.helm_update]
+##### Create the controllers namespaces
+resource "kubernetes_namespace" "ing_ctrl_public_ns" {
+  metadata {
+    name = local.ing_public_name
+  }
+}
+resource "kubernetes_namespace" "ing_ctrl_internal_ns" {
+  metadata {
+    name = local.ing_internal_name
+  }
+}
 
-  name             = "ingress-public"
-  namespace        = "ingress-public"
-  create_namespace = true
+##### Create the TLS for Ingresses (for Options 1 & 2)
+resource "azurerm_role_assignment" "aks_kv_rassignment" {
+  principal_id         = azurerm_kubernetes_cluster.this.key_vault_secrets_provider[0].secret_identity[0].object_id
+  role_definition_name = "Key Vault Secrets User"
+  scope                = azurerm_key_vault.this.id
+}
+resource "kubernetes_manifest" "kv_csi_secret_providers" {
+  depends_on = [
+    kubernetes_namespace.ing_ctrl_public_ns,
+    kubernetes_namespace.ing_ctrl_internal_ns,
+  ]
+
+  for_each = toset(["${kubernetes_namespace.ing_ctrl_public_ns.metadata[0].name}", "${local.ing_internal_name}"])
+
+  manifest = yamldecode(
+    <<-EOF
+    # This is a SecretProviderClass example using user-assigned identity to access your key vault
+    apiVersion: secrets-store.csi.x-k8s.io/v1
+    kind: SecretProviderClass
+    metadata:
+      name: ${local.secret_provider_class_name}
+      namespace: ${each.value}
+    spec:
+      provider: azure
+      secretObjects:                            # secretObjects defines the desired state of synced K8s secret objects
+        - secretName: "kv-${azurerm_key_vault_certificate.this.name}-tls-csi"
+          type: kubernetes.io/tls
+          data:
+            - objectName: ${azurerm_key_vault_certificate.this.name}
+              key: tls.key
+            - objectName: ${azurerm_key_vault_certificate.this.name}
+              key: tls.crt
+      parameters:
+        usePodIdentity: "false"
+        useVMManagedIdentity: "true"                                                                                          # Set to true for using managed identity
+        userAssignedIdentityID: ${azurerm_kubernetes_cluster.this.key_vault_secrets_provider[0].secret_identity[0].client_id} # Set the clientID of the user-assigned managed identity to use
+        keyvaultName: ${azurerm_key_vault.this.name}                                                                          # Set to the name of your key vault
+        objects:  |
+          array:
+            - |
+              objectName: ${azurerm_key_vault_certificate.this.name}  # object names or secrets
+              objectType: secret              # object types: secret, key, or cert
+        tenantId: ${var.tenant_id}            # The tenant ID of the key vault
+        EOF
+  )
+}
+
+# Public Ingress controller
+resource "helm_release" "ing_ctrl_public" {
+  depends_on = [
+    null_resource.helm_update,
+    kubernetes_namespace.ing_ctrl_public_ns,
+    kubernetes_manifest.kv_csi_secret_providers,
+  ]
+
+  name             = local.ing_public_name
+  namespace        = local.ing_public_name
+  create_namespace = false
 
   repository = "https://kubernetes.github.io/ingress-nginx"
   chart      = "ingress-nginx"
   version    = "v4.9.1"
 
+  # values = [ "${file("ing-public-values.yaml")}" ]
+
   values = [
-    "${file("ing-public-values.yaml")}"
+    <<-EOF
+    controller:
+      ingressClassResource:
+        name: "${local.ing_public_name}"
+      config:
+        enable-modsecurity: true
+        enable-owasp-modsecurity-crs: true
+      replicaCount: 2
+      service:
+        annotations:
+          service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"
+      extraVolumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "${local.secret_provider_class_name}"
+      extraVolumeMounts:
+        - name: secrets-store-inline
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+    defaultBackend:
+      enabled: true
+    EOF
   ]
 }
 
+# Internal Ingress controller
 resource "azurerm_role_assignment" "aks_vnet_rassignment" {
   principal_id         = azurerm_kubernetes_cluster.this.identity[0].principal_id
   role_definition_name = "Network Contributor"
   scope                = azurerm_resource_group.this.id
-  # Note: more than VNet for ILB, to create the PLS, role is needed at the RG level.
+  # Note: only VNet is requried for ILB, but to create the PLS, role is needed at the RG level.
 }
 resource "helm_release" "ing_ctrl_internal" {
   depends_on = [
     null_resource.helm_update,
     azurerm_role_assignment.aks_vnet_rassignment,
+    kubernetes_namespace.ing_ctrl_internal_ns,
+    kubernetes_manifest.kv_csi_secret_providers,
   ]
 
-  name             = "ingress-internal"
-  namespace        = "ingress-internal"
-  create_namespace = true
+  name             = local.ing_internal_name
+  namespace        = local.ing_internal_name
+  create_namespace = false
 
   repository = "https://kubernetes.github.io/ingress-nginx"
   chart      = "ingress-nginx"
@@ -235,7 +329,7 @@ resource "helm_release" "ing_ctrl_internal" {
     <<-EOF
     controller:
       ingressClassResource:
-        name: nginx-internal
+        name: "${local.ing_internal_name}"
       config:
         enable-modsecurity: true
         enable-owasp-modsecurity-crs: true
@@ -252,17 +346,28 @@ resource "helm_release" "ing_ctrl_internal" {
           service.beta.kubernetes.io/azure-pls-create: "true"
           service.beta.kubernetes.io/azure-pls-resource-group: "${azurerm_resource_group.this.name}"
           service.beta.kubernetes.io/azure-pls-ip-configuration-subnet: "${azurerm_subnet.ilb.name}"
-          service.beta.kubernetes.io/azure-pls-name: "pls-ingress-internal"
+          service.beta.kubernetes.io/azure-pls-name: "pls-${local.ing_internal_name}"
           service.beta.kubernetes.io/azure-pls-ip-configuration-ip-address-count: 2
           service.beta.kubernetes.io/azure-pls-proxy-protocol: "true"
           service.beta.kubernetes.io/azure-pls-visibility: "*"
           service.beta.kubernetes.io/azure-pls-auto-approval: "${var.subsc_id}"
+      extraVolumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "${local.secret_provider_class_name}"
+      extraVolumeMounts:
+        - name: secrets-store-inline
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
     defaultBackend:
       enabled: true
     EOF
   ]
 }
-
+#*/
 
 ##### Deploy the Apps for the test
 # / Httpbin
@@ -288,7 +393,7 @@ resource "kubernetes_manifest" "azvote_back_dep" {
 }
 resource "kubernetes_manifest" "azvote_back_svc" {
   depends_on = [kubernetes_manifest.azvote_back_dep]
-  manifest   = yamldecode(file("azure-vote/3.az-vote-back-svc.yaml"))
+  manifest   = yamldecode(file("azure-vote/3.az-vote-back-svc-clusip.yaml"))
 }
 resource "kubernetes_manifest" "azvote_front_dep" {
   depends_on = [kubernetes_manifest.azvote_ns]
@@ -311,6 +416,12 @@ resource "kubernetes_manifest" "helloaks_svc" {
   depends_on = [kubernetes_manifest.helloaks_dep]
   manifest   = yamldecode(file("hello-aks/3.hello-aks-svc-clusip.yaml"))
 }
+
+##### Expose the Services on the Internal Load Balancer with PLS (for Option 3)
+
+
+
+
 
 
 ##### Azure Front Door

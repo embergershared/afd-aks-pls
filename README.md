@@ -18,3 +18,11 @@ AKS services exposed with AFD through a PLS
 
 
 ### Option 3: Origin to AKS Internal service
+
+
+## References
+
+[Use the Azure Key Vault provider for Secrets Store CSI Driver in an Azure Kubernetes Service (AKS) cluster](https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver)
+
+
+[Set up Secrets Store CSI Driver to enable NGINX Ingress Controller with TLS](https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-nginx-tls#deploy-a-secretproviderclass)
