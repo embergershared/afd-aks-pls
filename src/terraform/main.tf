@@ -269,7 +269,7 @@ resource "helm_release" "ing_ctrl_public" {
 
   repository = "https://kubernetes.github.io/ingress-nginx"
   chart      = "ingress-nginx"
-  version    = "v4.9.1"
+  version    = "4.9.1"
 
   # values = [ "${file("ing-public-values.yaml")}" ]
 
@@ -323,7 +323,7 @@ resource "helm_release" "ing_ctrl_internal" {
 
   repository = "https://kubernetes.github.io/ingress-nginx"
   chart      = "ingress-nginx"
-  version    = "v4.9.1"
+  version    = "4.9.1"
 
   values = [
     <<-EOF
