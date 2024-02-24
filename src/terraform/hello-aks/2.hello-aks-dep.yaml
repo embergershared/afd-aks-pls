@@ -13,6 +13,9 @@ spec:
       labels:
         app: hello-aks
     spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+        kubernetes.azure.com/mode: user
       containers:
       - name: hello-aks
         image: mcr.microsoft.com/azuredocs/aks-helloworld:v1
@@ -20,4 +23,15 @@ spec:
         - containerPort: 80
         env:
         - name: TITLE
-          value: "Hello AKS!"
+          value: "Hello AKS! Served from hello-aks-dep."
+        volumeMounts:
+          - name: secrets-store-inline
+            mountPath: "/mnt/secrets-store"
+            readOnly: true
+      volumes:
+      - name: secrets-store-inline
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: kv-aks-afd-pls-01-aks-msi-ing-tls

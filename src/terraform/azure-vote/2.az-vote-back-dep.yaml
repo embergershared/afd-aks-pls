@@ -15,6 +15,7 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/os: linux
+        kubernetes.azure.com/mode: user
       containers:
         - name: azure-vote-back
           image: mcr.microsoft.com/oss/bitnami/redis:6.0.8

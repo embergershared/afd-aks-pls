@@ -6,6 +6,12 @@ variable "client_id" {}
 variable "client_secret" {}
 variable "aks_admins_group" {}
 
+# 2 steps deployment control
+variable "is_ready_to_deploy_origins" {
+  type    = bool
+  default = false
+}
+
 # Base settings
 variable "res_suffix" {}
 variable "loc_sub" {}

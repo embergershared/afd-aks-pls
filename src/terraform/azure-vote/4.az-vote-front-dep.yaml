@@ -15,6 +15,7 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/os: linux
+        kubernetes.azure.com/mode: user
       containers:
         - name: azure-vote-front
           image: mcr.microsoft.com/azuredocs/azure-vote-front:v1
@@ -29,4 +30,15 @@ spec:
             - containerPort: 80
           env:
             - name: REDIS
-              value: azure-vote-back-svc
+              value: azure-vote-back-svc-clusip
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+      volumes:
+      - name: secrets-store-inline
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: kv-aks-afd-pls-01-aks-msi-ing-tls
