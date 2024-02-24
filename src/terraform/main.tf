@@ -332,7 +332,7 @@ resource "helm_release" "ing_ctrl_public" {
   ]
 }
 
-/*
+
 # Internal Ingress controller
 resource "azurerm_role_assignment" "aks_vnet_rassignment" {
   principal_id         = azurerm_kubernetes_cluster.this.identity[0].principal_id
@@ -406,7 +406,7 @@ resource "helm_release" "ing_ctrl_internal" {
 #*/
 
 
-##### Deploy the Apps for the test
+##### Deploy the 3 Apps for the tests
 # / Httpbin
 resource "kubernetes_manifest" "httpbin_dep" {
   depends_on = [kubernetes_namespace.this]
@@ -446,7 +446,7 @@ resource "kubernetes_manifest" "helloaks_svc" {
 }
 
 #*/
-##### Expose the Applications through Ingresses on the Public Load Balancer (for Option 1)
+##### Expose the 3 Applications with Ingresses on the Public Load Balancer (for Option 1)
 resource "azurerm_dns_a_record" "httpbin_ing_public_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
@@ -490,7 +490,6 @@ resource "kubernetes_ingress_v1" "httpbin_ing_public" {
   }
 }
 
-
 resource "azurerm_dns_a_record" "azvote_ing_public_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
@@ -531,7 +530,6 @@ resource "kubernetes_ingress_v1" "azvote_ing_public" {
     }
   }
 }
-
 
 resource "azurerm_dns_a_record" "helloaks_ing_public_ebdemos_info" {
   provider = azurerm.s2-connectivity
@@ -577,13 +575,12 @@ resource "kubernetes_ingress_v1" "helloaks_ing_public" {
 }
 
 
-##### Expose the Applications through Ingresses on the Internal Load Balancer (for Option 2)
-# Internal IP of the ingress: data.kubernetes_service.ingress_internal.status.0.load_balancer.0.ingress.0.ip
+##### Expose the 3 Applications with Ingresses on the Internal Load Balancer (for Option 2)
 
 
 
 
-##### Expose the Applications through Services on the Internal Load Balancer with PLS (for Option 3)
+##### Expose the Applications with LoadBalancer Services on the Internal Load Balancer and PLS (for Option 3)
 resource "kubernetes_service" "httpbin_svc_ilb" {
   metadata {
     name      = "httpbin-svc-ilb"
@@ -702,13 +699,21 @@ resource "azurerm_role_assignment" "frontdoor_profile_system_identity" {
   principal_id         = jsondecode(azapi_update_resource.frontdoor_profile_system_identity.output).identity.principalId
 }
 
-# Endpoints
-resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_1" {
-  # https://aksafdpls-g2dqh6dvctcmgdfb.b01.azurefd.net/
+# TLS certificate for AFD endpoint
+resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
+  depends_on = [azurerm_role_assignment.frontdoor_profile_system_identity]
 
-  name                     = "aksafdpls1"
+  name                     = "test-ebdemos-info"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
+
+  secret {
+    customer_certificate {
+      key_vault_certificate_id = azurerm_key_vault_certificate.this.id
+    }
+  }
 }
+
+# Endpoints
 resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_2" {
   # https://aksafdpls-g2dqh6dvctcmgdfb.b01.azurefd.net/
 
@@ -723,8 +728,116 @@ resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_3" {
 }
 
 
+
+# External/Public-ingress Origin group (Option 1)
+resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_1" {
+  # https://aksafdpls-g2dqh6dvctcmgdfb.b01.azurefd.net/
+
+  name                     = "aksafdpls1"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
+}
+resource "azurerm_cdn_frontdoor_origin_group" "pub_ing" {
+  name                     = "external-ingresses"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
+  session_affinity_enabled = false
+
+  health_probe {
+    interval_in_seconds = 100
+    path                = "/"
+    protocol            = "Https"
+    request_type        = "GET"
+  }
+
+  load_balancing {
+    additional_latency_in_milliseconds = 50
+    sample_size                        = 4
+    successful_samples_required        = 3
+  }
+}
+resource "azurerm_cdn_frontdoor_origin" "pub_httpbin" {
+  name                          = "httpbin-pub-ing"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pub_ing.id
+
+  enabled                        = false
+  certificate_name_check_enabled = true
+  host_name                      = "httpbin-ing.ebdemos.info"
+  origin_host_header             = "httpbin-ing.ebdemos.info"
+  priority                       = 1
+  weight                         = 1000
+}
+resource "azurerm_cdn_frontdoor_origin" "pub_azvote" {
+  name                          = "azvote-pub-ing"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pub_ing.id
+
+  enabled                        = false
+  certificate_name_check_enabled = true
+  host_name                      = "azure-vote-ing.ebdemos.info"
+  origin_host_header             = "azure-vote-ing.ebdemos.info"
+  priority                       = 1
+  weight                         = 1000
+}
+resource "azurerm_cdn_frontdoor_origin" "pub_helloaks" {
+  name                          = "helloaks-pub-ing"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pub_ing.id
+
+  enabled                        = true
+  certificate_name_check_enabled = true
+  host_name                      = "hello-aks-ing.ebdemos.info"
+  origin_host_header             = "hello-aks-ing.ebdemos.info"
+  priority                       = 1
+  weight                         = 1000
+}
+resource "azurerm_dns_cname_record" "pub_ing_ebdemos_info" {
+  provider = azurerm.s2-connectivity
+
+  name                = "aksafd-pub-ing"
+  zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
+  resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
+  ttl                 = 60
+  record              = azurerm_cdn_frontdoor_endpoint.ep_for_option_1.host_name
+}
+resource "azurerm_cdn_frontdoor_custom_domain" "pub_ing_ebdemos_info" {
+  depends_on = [azurerm_cdn_frontdoor_secret.tls_cert]
+
+  name                     = "${azurerm_dns_cname_record.pub_ing_ebdemos_info.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
+  dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id
+  host_name                = "${azurerm_dns_cname_record.pub_ing_ebdemos_info.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
+  # https://testext.ebdemos.info
+
+  tls {
+    certificate_type        = "CustomerCertificate"
+    minimum_tls_version     = "TLS12"
+    cdn_frontdoor_secret_id = azurerm_cdn_frontdoor_secret.tls_cert.id
+  }
+}
+resource "azurerm_cdn_frontdoor_route" "pub_ing_route" {
+  name                      = "rt-to-ext-origins"
+  cdn_frontdoor_endpoint_id = azurerm_cdn_frontdoor_endpoint.ep_for_option_1.id
+  enabled                   = true
+
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pub_ing.id
+  cdn_frontdoor_origin_ids = [
+    azurerm_cdn_frontdoor_origin.pub_httpbin.id,
+    azurerm_cdn_frontdoor_origin.pub_azvote.id,
+    azurerm_cdn_frontdoor_origin.pub_helloaks.id,
+  ]
+
+  forwarding_protocol    = "HttpsOnly"
+  https_redirect_enabled = false
+  patterns_to_match      = ["/*"]
+  supported_protocols    = ["Https"]
+
+  cdn_frontdoor_custom_domain_ids = [
+    azurerm_cdn_frontdoor_custom_domain.pub_ing_ebdemos_info.id,
+  ]
+  link_to_default_domain = false
+}
+# https://aksafd-pub-ing.ebdemos.info
+#*/
+
 /*
-# Internal/Private-ingress Origin group
+# Internal/Private-ingress Origin group (Option 2)
 resource "azurerm_cdn_frontdoor_origin_group" "int_ing" {
   name                     = "internal-ingresses"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
@@ -780,9 +893,9 @@ resource "azurerm_cdn_frontdoor_origin" "int_httpbin" {
 #*/
 
 /*
-# External/Public-ingress Origin group
-resource "azurerm_cdn_frontdoor_origin_group" "ext_ing" {
-  name                     = "external-ingresses"
+# Internal/PLS services Origin group (Option 3)
+resource "azurerm_cdn_frontdoor_origin_group" "pls_svc" {
+  name                     = "internal-ingresses"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
   session_affinity_enabled = false
 
@@ -799,42 +912,45 @@ resource "azurerm_cdn_frontdoor_origin_group" "ext_ing" {
     successful_samples_required        = 3
   }
 }
-resource "azurerm_cdn_frontdoor_origin" "ext_azvote" {
-  name                          = "azvote-ext"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.ext_ing.id
-
-  enabled                        = false
-  certificate_name_check_enabled = true
-  host_name                      = "azvote.ebdemos.info"
-  origin_host_header             = "azvote.ebdemos.info"
-  priority                       = 1
-  weight                         = 1000
-}
-resource "azurerm_cdn_frontdoor_origin" "ext_httpbin" {
-  name                          = "httpbin-ext"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.ext_ing.id
+resource "azurerm_cdn_frontdoor_origin" "pls_azvote" {
+  name                          = "azvote-int"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
 
   enabled                        = true
   certificate_name_check_enabled = true
-  host_name                      = "httpbin.ebdemos.info"
-  origin_host_header             = "httpbin.ebdemos.info"
+  host_name                      = "azvote.int.ebdemos.info"
+  origin_host_header             = "azvote.int.ebdemos.info"
   priority                       = 1
   weight                         = 1000
+
+  # private_link {
+  #   request_message        = "Please approve"
+  #   location               = azurerm_resource_group.this.location
+  #   private_link_target_id = data.azurerm_private_link_service.priv_ing_pls.id
+  # }
 }
+resource "azurerm_cdn_frontdoor_origin" "pls_httpbin" {
+  name                          = "httpbin-int"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
 
-# TLS certificate for AFD endpoint
-resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
-  depends_on = [azurerm_role_assignment.frontdoor_profile_system_identity]
+  enabled                        = false
+  certificate_name_check_enabled = true
+  host_name                      = "httpbin.int.ebdemos.info"
+  origin_host_header             = "httpbin.int.ebdemos.info"
+  priority                       = 1
+  weight                         = 1000
 
-  name                     = "test-ebdemos-info"
-  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-
-  secret {
-    customer_certificate {
-      key_vault_certificate_id = azurerm_key_vault_certificate.this.id
-    }
-  }
+  # private_link {
+  #   request_message        = "Please approve"
+  #   location               = azurerm_resource_group.this.location
+  #   private_link_target_id = data.azurerm_private_link_service.priv_ing_pls.id
+  # }
 }
+#*/
+
+
+
+
 
 /*
 # To Internal ingress
@@ -885,51 +1001,6 @@ resource "azurerm_cdn_frontdoor_route" "int_route" {
 
 /*
 # To Public ingress
-resource "azurerm_dns_cname_record" "testext_ebdemos_info" {
-  provider = azurerm.s2-connectivity
 
-  name                = "testext"
-  zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
-  resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
-  ttl                 = 60
-  record              = azurerm_cdn_frontdoor_endpoint.ep_2.host_name
-}
-resource "azurerm_cdn_frontdoor_custom_domain" "testext_ebdemos_info" {
-  depends_on = [azurerm_cdn_frontdoor_secret.tls_cert]
-
-  name                     = "${azurerm_dns_cname_record.testext_ebdemos_info.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
-  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id
-  host_name                = "${azurerm_dns_cname_record.testext_ebdemos_info.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
-  # https://testext.ebdemos.info
-
-  tls {
-    certificate_type        = "CustomerCertificate"
-    minimum_tls_version     = "TLS12"
-    cdn_frontdoor_secret_id = azurerm_cdn_frontdoor_secret.tls_cert.id
-  }
-}
-resource "azurerm_cdn_frontdoor_route" "ext_route" {
-  name                      = "rt-to-ext-origins"
-  cdn_frontdoor_endpoint_id = azurerm_cdn_frontdoor_endpoint.ep_2.id
-  enabled                   = true
-
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.ext_ing.id
-  cdn_frontdoor_origin_ids = [
-    azurerm_cdn_frontdoor_origin.ext_azvote.id,
-    azurerm_cdn_frontdoor_origin.ext_httpbin.id,
-  ]
-
-  forwarding_protocol    = "HttpsOnly"
-  https_redirect_enabled = false
-  patterns_to_match      = ["/*"]
-  supported_protocols    = ["Https"]
-
-  cdn_frontdoor_custom_domain_ids = [
-    azurerm_cdn_frontdoor_custom_domain.testext_ebdemos_info.id,
-  ]
-  # link_to_default_domain = true
-}
-# https://testext.ebdemos.info
 
 #*/
