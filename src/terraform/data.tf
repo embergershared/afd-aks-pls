@@ -22,8 +22,10 @@ data "http" "icanhazip" {
 }
 
 
-data "kubernetes_service" "ingress_public" {
+data "kubernetes_service_v1" "ingress_public" {
   depends_on = [helm_release.ing_ctrl_public]
+
+  count = local.deploy_option1 ? 1 : 0
 
   metadata {
     name      = "${local.ing_public_name}-ingress-nginx-controller"
@@ -31,11 +33,13 @@ data "kubernetes_service" "ingress_public" {
   }
 }
 
-# data "kubernetes_service" "ingress_internal" {
-#   depends_on = [helm_release.ing_ctrl_internal]
+data "kubernetes_service_v1" "ingress_internal" {
+  depends_on = [helm_release.ing_ctrl_internal]
 
-#   metadata {
-#     name      = "${local.ing_internal_name}-ingress-nginx-controller"
-#     namespace = local.ing_internal_name
-#   }
-# }
+  count = local.deploy_option2 ? 1 : 0
+
+  metadata {
+    name      = "${local.ing_internal_name}-ingress-nginx-controller"
+    namespace = local.ing_internal_name
+  }
+}
