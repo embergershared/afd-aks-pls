@@ -72,7 +72,7 @@ locals {
   kubernetes_manifest_ready = true
 
   # Azure Front Door to Azure Kubernetes Service Options
-  deploy_option1 = true  # Front Door to Public kubernetes Ingresses
+  deploy_option1 = false # Front Door to Public kubernetes Ingresses
   deploy_option2 = false # Front Door to Internal kubernetes Ingresses through Private Link Service on the Internal Load Balancer
   deploy_option3 = false # Front Door to kubernetes Services through Private Link Service on the Internal Load Balancer
 }
