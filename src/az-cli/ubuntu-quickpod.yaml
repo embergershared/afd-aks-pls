@@ -20,3 +20,7 @@ spec:
 # apt update && apt install curl dnsutils iputils-ping -y
 ### Test DNS resolution:
 # curl -I https://www.microsoft.com
+### Test TLS Certificate:
+# curl --insecure -vvI https://www.microsoft.com
+### Install the CA certificates:
+# sudo apt-get install ca-certificates

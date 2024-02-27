@@ -1,28 +1,62 @@
 locals {
-  public_ip = chomp(data.http.icanhazip.response_body)
-
+  public_ip                  = chomp(data.http.icanhazip.response_body)
   secret_provider_class_name = "${azurerm_key_vault.this.name}-aks-msi-ing-tls"
 
 
+  # Base resources Tags
+  UTC_to_TZ      = "-5h" # Careful to factor DST
+  TZ_suffix      = "EST"
+  created_TZtime = timeadd(local.created_now, local.UTC_to_TZ)
+  created_now    = time_static.this.rfc3339
+  created_nowTZ  = "${formatdate("YYYY-MM-DD hh:mm", local.created_TZtime)} ${local.TZ_suffix}" # 2020-06-16 14:44 EST
+
+  base_tags = tomap({
+    "Created_with"    = "Terraform v1.7.2 on windows_amd64",
+    "Created_on"      = "${local.created_nowTZ}",
+    "Initiated_by"    = "Manually",
+    "GiHub_repo"      = "https://github.com/embergershared/aks-afd-pls",
+    "Subscription"    = "s4",
+    "Terraform_state" = "tfstates-s4-spokes/aks-afd-pls"
+  })
+
+  # List of resources to create a Diagnostic setting for:
+  res_for_diag_settings_ids = concat(
+    [azurerm_cdn_frontdoor_profile.this.id],
+    local.deploy_aks ? [azurerm_kubernetes_cluster.this.0.id] : [],
+  )
+  diag_settings = { for res_id in local.res_for_diag_settings_ids :
+    "${reverse(split("/", res_id))[0]}" => res_id
+  }
+
   # Namespaces to use
-  ing_internal_name = "ingress-internal"
-  ing_public_name   = "ingress-public"
-  azure_vote        = "azure-vote"
-  httpbin           = "httpbin"
-  hello_aks         = "hello-aks"
+  internal_ingress_name = "ingress-internal"
+  public_ingress_name   = "ingress-public"
+  azure_vote            = "azure-vote"
+  httpbin               = "httpbin"
+  hello_aks             = "hello-aks"
 
   apps_namespaces = [
     local.azure_vote,
     local.httpbin,
     local.hello_aks
   ]
-  ns_w_opt1   = local.deploy_option1 ? concat(local.apps_namespaces, [local.ing_public_name]) : local.apps_namespaces
-  ns_w_opt2   = local.deploy_option2 ? concat(local.ns_w_opt1, [local.ing_internal_name]) : local.ns_w_opt1
-  ns_full_set = toset(local.ns_w_opt2)
+  ns_full_set = toset(concat(
+    local.apps_namespaces,
+    local.deploy_option1 ? [local.public_ingress_name] : [],
+    local.deploy_option2 ? [local.internal_ingress_name] : []
+  ))
+
+  # Resource ID of the Public Load Balancer bound Private Link Service
+  public_lb_pls_name = "pls-${local.public_ingress_name}"
+  public_lb_pls_id = replace(
+    azurerm_virtual_network.this.id,
+    "/virtualNetworks/${azurerm_virtual_network.this.name}",
+    "/privateLinkServices/${local.public_lb_pls_name}/"
+  )
 
 
   # Resource ID of the Internal Load Balancer bound Private Link Service
-  ilb_pls_name = "pls-${local.ing_internal_name}"
+  ilb_pls_name = "pls-${local.internal_ingress_name}"
   ilb_pls_id = replace(
     azurerm_virtual_network.this.id,
     "/virtualNetworks/${azurerm_virtual_network.this.name}",
@@ -32,8 +66,8 @@ locals {
   ########  Deployment control  ########
 
   # Deployment steps:
-  # 1. All locals below to "false", run terraform apply to deploy:
-  #    - RG, KV, AFD, VNet and Storage Account.
+  # 1. All controls variables below set to "false", run terraform apply to deploy:
+  #    - RG, KV, AFD, VNet, Storage Account and Log Analytics Workspace.
   #
   # 2. Set "deploy_aks" to "true", run terraform apply to deploy:
   #    - the AKS cluster,
@@ -66,13 +100,10 @@ locals {
   #    - the Azure Front Door Origin group & origins to the services PLSs,
   #    - the Azure Front Door routing rule.
 
-  # Deployment contol variables
-  deploy_aks = true
-  # Required to manage the fact resources of type kubernetes_manifest will query the cluster, even if not created
-  kubernetes_manifest_ready = true
-
-  # Azure Front Door to Azure Kubernetes Service Options
-  deploy_option1 = false # Front Door to Public kubernetes Ingresses
-  deploy_option2 = false # Front Door to Internal kubernetes Ingresses through Private Link Service on the Internal Load Balancer
-  deploy_option3 = false # Front Door to kubernetes Services through Private Link Service on the Internal Load Balancer
+  # Deployment control variables
+  deploy_aks                = false
+  kubernetes_manifest_ready = false # Required to manage that resources of type kubernetes_manifest will query the cluster, even if not created
+  deploy_option1            = false # Front Door to Public kubernetes Ingresses
+  deploy_option2            = false # Front Door to Internal kubernetes Ingresses through Private Link Service on the Internal Load Balancer
+  deploy_option3            = false # Front Door to kubernetes Services through Private Link Service on the Internal Load Balancer
 }

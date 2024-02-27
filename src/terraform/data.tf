@@ -1,3 +1,9 @@
+# Get public IP
+# https://registry.terraform.io/providers/hashicorp/http/latest/docs/data-sources/http
+data "http" "icanhazip" {
+  url = "http://icanhazip.com"
+}
+# Get the Azure Public DNS Zone to create the AFD Endpoints CNAME records
 data "azurerm_dns_zone" "public_dnz_zone" {
   provider = azurerm.s2-connectivity
 
@@ -5,41 +11,33 @@ data "azurerm_dns_zone" "public_dnz_zone" {
   resource_group_name = split("/", var.dns_zone_id)[4]
 }
 
-# data "azurerm_resources" "aks_managed_plss" {
-#   resource_group_name = var.aks_managed_rg_name
-#   type                = "Microsoft.Network/privateLinkServices"
-# }
+# Gather the Diagnostic categories for the selected resources
+data "azurerm_monitor_diagnostic_categories" "this" {
+  for_each = local.diag_settings
 
-# data "azurerm_private_link_service" "priv_ing_pls" {
-#   name                = data.azurerm_resources.aks_managed_plss.resources[0].name
-#   resource_group_name = var.aks_managed_rg_name
-# }
-
-# Get public IP
-# https://registry.terraform.io/providers/hashicorp/http/latest/docs/data-sources/http
-data "http" "icanhazip" {
-  url = "http://icanhazip.com"
+  resource_id = each.value
 }
 
-
-data "kubernetes_service_v1" "ingress_public" {
-  depends_on = [helm_release.ing_ctrl_public]
+# Allows to get the Public IP of the Public Ingress controller
+data "kubernetes_service_v1" "public_ingress_svc" {
+  depends_on = [helm_release.public_ingress_controller]
 
   count = local.deploy_option1 ? 1 : 0
 
   metadata {
-    name      = "${local.ing_public_name}-ingress-nginx-controller"
-    namespace = local.ing_public_name
+    name      = "${local.public_ingress_name}-ingress-nginx-controller"
+    namespace = local.public_ingress_name
   }
 }
 
-data "kubernetes_service_v1" "ingress_internal" {
-  depends_on = [helm_release.ing_ctrl_internal]
+# Allows to get the Private IP of the Internal Ingress controller on the ilb-subnet
+data "kubernetes_service_v1" "internal_ingress_svc" {
+  depends_on = [helm_release.internal_ingress_controller]
 
   count = local.deploy_option2 ? 1 : 0
 
   metadata {
-    name      = "${local.ing_internal_name}-ingress-nginx-controller"
-    namespace = local.ing_internal_name
+    name      = "${local.internal_ingress_name}-ingress-nginx-controller"
+    namespace = local.internal_ingress_name
   }
 }

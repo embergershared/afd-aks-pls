@@ -1,32 +1,23 @@
+# Random string for LAW suffix
+resource "random_string" "this" {
+  length    = 4
+  lower     = true
+  upper     = false
+  numeric   = false
+  special   = false
+  min_lower = 4
+}
+# Timestamp for the Created_on tag
+resource "time_static" "this" {}
+
+
 resource "azurerm_resource_group" "this" {
   name     = "rg-${var.loc_sub}-${var.res_suffix}"
   location = var.location
+  tags     = local.base_tags
 }
 
-resource "azurerm_storage_account" "this" {
-  name                     = substr(replace("st-${var.res_suffix}", "-", ""), 0, 24)
-  resource_group_name      = azurerm_resource_group.this.name
-  location                 = azurerm_resource_group.this.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-
-  allow_nested_items_to_be_public  = false
-  cross_tenant_replication_enabled = false
-}
-#   / Main location storage account Networking rules
-resource "azurerm_storage_account_network_rules" "this" {
-  # Prevents locking the Storage Account before all resources are created
-  depends_on = [
-    azurerm_storage_account.this
-  ]
-
-  storage_account_id         = azurerm_storage_account.this.id
-  default_action             = "Deny"
-  ip_rules                   = [local.public_ip]
-  virtual_network_subnet_ids = []
-  bypass                     = ["AzureServices"]
-}
-
+# Key vault + Certificate
 resource "azurerm_key_vault" "this" {
   name                = substr(lower("kv-${var.res_suffix}"), 0, 24)
   location            = azurerm_resource_group.this.location
@@ -38,27 +29,30 @@ resource "azurerm_key_vault" "this" {
   enabled_for_deployment          = false
   enabled_for_disk_encryption     = false
   enabled_for_template_deployment = false
-}
 
+  tags = azurerm_resource_group.this.tags
+}
 resource "azurerm_key_vault_certificate" "this" {
-  name         = "extended-star-ebdemos-info"
+  name         = "star-ebdemos-info"
   key_vault_id = azurerm_key_vault.this.id
   certificate {
     contents = filebase64(var.pfx_cert_name)
     password = var.pfx_cert_password
   }
-  lifecycle {
-    ignore_changes = [certificate]
-  }
+  # lifecycle {
+  #   ignore_changes = [certificate]
+  # }
 }
 
+# Virtual Networek + Subnets
 resource "azurerm_virtual_network" "this" {
   name                = "vnet-${var.res_suffix}"
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
   address_space       = ["192.168.0.0/22"]
-}
 
+  tags = azurerm_resource_group.this.tags
+}
 resource "azurerm_subnet" "ilb" {
   name                 = "aks-ilb-snet"
   resource_group_name  = azurerm_resource_group.this.name
@@ -111,13 +105,15 @@ resource "azurerm_subnet" "pods" {
 
 
 resource "azurerm_private_dns_zone" "this" {
-  count = local.deploy_option1 || local.deploy_aks && local.deploy_option2 ? 1 : 0
+  count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   name                = "ebdemos.info"
   resource_group_name = azurerm_resource_group.this.name
+
+  tags = azurerm_resource_group.this.tags
 }
 resource "azurerm_private_dns_zone_virtual_network_link" "this" {
-  count = local.deploy_option1 || local.deploy_aks && local.deploy_option2 ? 1 : 0
+  count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   name                  = "link-to-aks-vnet"
   resource_group_name   = azurerm_resource_group.this.name
@@ -127,7 +123,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "this" {
 }
 
 
-##### AKS
+##### AKS / Cluster and User Node pool
 resource "azurerm_kubernetes_cluster" "this" {
   count = local.deploy_aks ? 1 : 0
 
@@ -185,6 +181,8 @@ resource "azurerm_kubernetes_cluster" "this" {
     secret_rotation_enabled  = false
     secret_rotation_interval = "2m"
   }
+
+  tags = azurerm_resource_group.this.tags
 }
 resource "azurerm_kubernetes_cluster_node_pool" "userpool1" {
   count = local.deploy_aks ? 1 : 0
@@ -214,7 +212,118 @@ resource "kubernetes_namespace" "this" {
   }
 }
 
-##### Create the CSI drivers in all namespaces for Key vault integration
+##### Azure Front Door Common configuration
+resource "azurerm_cdn_frontdoor_profile" "this" {
+  name                     = "afd-${var.res_suffix}"
+  resource_group_name      = azurerm_resource_group.this.name
+  sku_name                 = "Premium_AzureFrontDoor"
+  response_timeout_seconds = 60
+
+  tags = azurerm_resource_group.this.tags
+}
+resource "azapi_update_resource" "frontdoor_profile_system_identity" {
+  type        = "Microsoft.Cdn/profiles@2023-02-01-preview"
+  resource_id = azurerm_cdn_frontdoor_profile.this.id
+  body = jsonencode({
+    "identity" : {
+      "type" : "SystemAssigned"
+    }
+  })
+  response_export_values = ["identity.principalId", "identity.tenantId"]
+}
+resource "azurerm_role_assignment" "frontdoor_profile_system_identity" {
+  depends_on = [azapi_update_resource.frontdoor_profile_system_identity]
+
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = jsondecode(azapi_update_resource.frontdoor_profile_system_identity.output).identity.principalId
+}
+# TLS certificate for AFD endpoint + custom domain
+resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
+  depends_on = [azurerm_role_assignment.frontdoor_profile_system_identity]
+
+  name                     = "star-ebdemos-info"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
+
+  secret {
+    customer_certificate {
+      key_vault_certificate_id = azurerm_key_vault_certificate.this.id
+    }
+  }
+}
+
+# AKS + AFD / Log Analytics Workspace + Diag Settings
+resource "azurerm_log_analytics_workspace" "this" {
+  name                = substr(lower("law-${var.res_suffix}-${random_string.this.result}"), 0, 63)
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+
+  tags = azurerm_resource_group.this.tags
+}
+# Storage account for the Diag Settings
+resource "azurerm_storage_account" "this" {
+  name                     = substr(replace("st-${var.res_suffix}-${random_string.this.result}", "-", ""), 0, 24)
+  resource_group_name      = azurerm_resource_group.this.name
+  location                 = azurerm_resource_group.this.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  allow_nested_items_to_be_public  = false
+  cross_tenant_replication_enabled = false
+
+  tags = azurerm_resource_group.this.tags
+}
+resource "azurerm_storage_account_network_rules" "this" {
+  # Prevents locking the Storage Account before all resources are created
+  depends_on = [
+    azurerm_storage_account.this
+  ]
+
+  storage_account_id         = azurerm_storage_account.this.id
+  default_action             = "Deny"
+  ip_rules                   = [local.public_ip]
+  virtual_network_subnet_ids = []
+  bypass                     = ["AzureServices"]
+}
+# Creates the Azure Diagnostics Setting for the Resources:
+resource "azurerm_monitor_diagnostic_setting" "this" {
+  for_each = local.diag_settings
+
+  name               = "${each.key}-diag"
+  target_resource_id = each.value
+
+  eventhub_name                  = null
+  eventhub_authorization_rule_id = null
+  log_analytics_workspace_id     = azurerm_log_analytics_workspace.this.id
+  log_analytics_destination_type = "AzureDiagnostics"
+  storage_account_id             = azurerm_storage_account.this.id
+  partner_solution_id            = null
+
+  dynamic "enabled_log" {
+    for_each = lookup(data.azurerm_monitor_diagnostic_categories.this, each.key)["logs"]
+    content {
+      category = enabled_log.value
+    }
+  }
+
+  dynamic "metric" {
+    for_each = lookup(data.azurerm_monitor_diagnostic_categories.this, each.key)["metrics"]
+    content {
+      category = metric.value
+      enabled  = true
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      log_analytics_destination_type,
+    ]
+  }
+}
+
+##### AKS / Create the CSI drivers in all namespaces for Key vault integration
 resource "azurerm_role_assignment" "aks_kv_rassignment" {
   count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
 
@@ -264,7 +373,7 @@ resource "kubernetes_manifest" "kv_csi_secret_providers" {
   )
 }
 
-##### Deploy the 3 Apps for the tests
+##### AKS / Deploy the 3 Apps for the tests
 # / Httpbin
 resource "kubernetes_manifest" "httpbin_dep" {
   depends_on = [kubernetes_namespace.this]
@@ -320,47 +429,7 @@ resource "kubernetes_manifest" "helloaks_svc" {
 }
 
 
-##### Azure Front Door Common configuration
-resource "azurerm_cdn_frontdoor_profile" "this" {
-  name                     = "afd-${var.res_suffix}"
-  resource_group_name      = azurerm_resource_group.this.name
-  sku_name                 = "Premium_AzureFrontDoor"
-  response_timeout_seconds = 60
-}
-resource "azapi_update_resource" "frontdoor_profile_system_identity" {
-  type        = "Microsoft.Cdn/profiles@2023-02-01-preview"
-  resource_id = azurerm_cdn_frontdoor_profile.this.id
-  body = jsonencode({
-    "identity" : {
-      "type" : "SystemAssigned"
-    }
-  })
-  response_export_values = ["identity.principalId", "identity.tenantId"]
-}
-resource "azurerm_role_assignment" "frontdoor_profile_system_identity" {
-  depends_on = [azapi_update_resource.frontdoor_profile_system_identity]
-
-  scope                = azurerm_key_vault.this.id
-  role_definition_name = "Key Vault Secrets User"
-  principal_id         = jsondecode(azapi_update_resource.frontdoor_profile_system_identity.output).identity.principalId
-}
-
-# TLS certificate for AFD endpoint + custom domain
-resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
-  depends_on = [azurerm_role_assignment.frontdoor_profile_system_identity]
-
-  name                     = "test-ebdemos-info"
-  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-
-  secret {
-    customer_certificate {
-      key_vault_certificate_id = azurerm_key_vault_certificate.this.id
-    }
-  }
-}
-
-
-##### Prepare Helm based AKS ingress controllers deployments
+##### AKS / Prepare Helm deployed Ingress controllers
 # helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 resource "null_resource" "helm_add_repo" {
   count = local.deploy_option1 || local.deploy_option1 ? 1 : 0
@@ -380,9 +449,12 @@ resource "null_resource" "helm_update" {
   }
 }
 
-##### OPTION 1: Expose the 3 Applications with Ingresses on the Public Load Balancer #####
-# Public Ingress controller
-resource "helm_release" "ing_ctrl_public" {
+########################################################################################
+### OPTION 1: Expose the 3 Applications with Ingresses on the Public Load Balancer   ###
+########################################################################################
+
+# AKS / Public Ingress controller
+resource "helm_release" "public_ingress_controller" {
   depends_on = [
     null_resource.helm_update,
     kubernetes_namespace.this,
@@ -390,8 +462,8 @@ resource "helm_release" "ing_ctrl_public" {
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
-  name             = local.ing_public_name
-  namespace        = local.ing_public_name
+  name             = local.public_ingress_name
+  namespace        = local.public_ingress_name
   create_namespace = false
 
   repository = "https://kubernetes.github.io/ingress-nginx"
@@ -404,7 +476,7 @@ resource "helm_release" "ing_ctrl_public" {
     <<-EOF
     controller:
       ingressClassResource:
-        name: "${local.ing_public_name}"
+        name: "${local.public_ingress_name}"
       config:
         enable-modsecurity: true
         enable-owasp-modsecurity-crs: true
@@ -435,8 +507,8 @@ resource "helm_release" "ing_ctrl_public" {
   ]
 }
 
-# HTTPBIN
-resource "azurerm_dns_a_record" "httpbin_ing_public_ebdemos_info" {
+# AKS / HTTPBIN
+resource "azurerm_dns_a_record" "public_ingress_httpbin_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
@@ -445,10 +517,10 @@ resource "azurerm_dns_a_record" "httpbin_ing_public_ebdemos_info" {
   zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
   resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
   ttl                 = 60
-  records             = [data.kubernetes_service_v1.ingress_public.0.status.0.load_balancer.0.ingress.0.ip]
+  records             = [data.kubernetes_service_v1.public_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
 }
-resource "kubernetes_ingress_v1" "httpbin_ing_public" {
-  depends_on = [azurerm_dns_a_record.httpbin_ing_public_ebdemos_info]
+resource "kubernetes_ingress_v1" "public_ingress_httpbin" {
+  depends_on = [azurerm_dns_a_record.public_ingress_httpbin_ebdemos_info]
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
@@ -459,9 +531,9 @@ resource "kubernetes_ingress_v1" "httpbin_ing_public" {
   }
 
   spec {
-    ingress_class_name = local.ing_public_name
+    ingress_class_name = local.public_ingress_name
     rule {
-      host = trimsuffix(azurerm_dns_a_record.httpbin_ing_public_ebdemos_info.0.fqdn, ".")
+      host = trimsuffix(azurerm_dns_a_record.public_ingress_httpbin_ebdemos_info.0.fqdn, ".")
       http {
         path {
           backend {
@@ -482,8 +554,8 @@ resource "kubernetes_ingress_v1" "httpbin_ing_public" {
   }
 }
 
-# Azure Vote
-resource "azurerm_dns_a_record" "azvote_ing_public_ebdemos_info" {
+# AKS / Azure Vote
+resource "azurerm_dns_a_record" "public_ingress_azvote_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
@@ -492,10 +564,10 @@ resource "azurerm_dns_a_record" "azvote_ing_public_ebdemos_info" {
   zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
   resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
   ttl                 = 60
-  records             = [data.kubernetes_service_v1.ingress_public.0.status.0.load_balancer.0.ingress.0.ip]
+  records             = [data.kubernetes_service_v1.public_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
 }
-resource "kubernetes_ingress_v1" "azvote_ing_public" {
-  depends_on = [azurerm_dns_a_record.azvote_ing_public_ebdemos_info]
+resource "kubernetes_ingress_v1" "public_ingress_azvote" {
+  depends_on = [azurerm_dns_a_record.public_ingress_azvote_ebdemos_info]
   metadata {
     name      = "${local.azure_vote}-ing-public"
     namespace = local.azure_vote
@@ -504,9 +576,9 @@ resource "kubernetes_ingress_v1" "azvote_ing_public" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   spec {
-    ingress_class_name = local.ing_public_name
+    ingress_class_name = local.public_ingress_name
     rule {
-      host = trimsuffix(azurerm_dns_a_record.azvote_ing_public_ebdemos_info.0.fqdn, ".")
+      host = trimsuffix(azurerm_dns_a_record.public_ingress_azvote_ebdemos_info.0.fqdn, ".")
       http {
         path {
           backend {
@@ -528,8 +600,8 @@ resource "kubernetes_ingress_v1" "azvote_ing_public" {
   }
 }
 
-# Hello AKS
-resource "azurerm_dns_a_record" "helloaks_ing_public_ebdemos_info" {
+# AKS / Hello AKS
+resource "azurerm_dns_a_record" "public_ingress_helloaks_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
@@ -538,10 +610,10 @@ resource "azurerm_dns_a_record" "helloaks_ing_public_ebdemos_info" {
   zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
   resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
   ttl                 = 60
-  records             = [data.kubernetes_service_v1.ingress_public.0.status.0.load_balancer.0.ingress.0.ip]
+  records             = [data.kubernetes_service_v1.public_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
 }
-resource "kubernetes_ingress_v1" "helloaks_ing_public" {
-  depends_on = [azurerm_dns_a_record.helloaks_ing_public_ebdemos_info]
+resource "kubernetes_ingress_v1" "public_ingress_helloaks" {
+  depends_on = [azurerm_dns_a_record.public_ingress_helloaks_ebdemos_info]
   metadata {
     name      = "${local.hello_aks}-ing-public"
     namespace = local.hello_aks
@@ -550,9 +622,9 @@ resource "kubernetes_ingress_v1" "helloaks_ing_public" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   spec {
-    ingress_class_name = local.ing_public_name
+    ingress_class_name = local.public_ingress_name
     rule {
-      host = trimsuffix(azurerm_dns_a_record.helloaks_ing_public_ebdemos_info.0.fqdn, ".")
+      host = trimsuffix(azurerm_dns_a_record.public_ingress_helloaks_ebdemos_info.0.fqdn, ".")
       http {
         path {
           backend {
@@ -576,14 +648,9 @@ resource "kubernetes_ingress_v1" "helloaks_ing_public" {
   }
 }
 
-# External/Public-ingress Origin group (Option 1)
-resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_1" {
-  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+# AFD / Public Ingresses Origin group + origins (Option 1)
 
-  name                     = "aksafdpls1"
-  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-}
-resource "azurerm_cdn_frontdoor_origin_group" "pub_ing" {
+resource "azurerm_cdn_frontdoor_origin_group" "public_ingress_origin_grp" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   name                     = "public-ingresses"
@@ -603,47 +670,54 @@ resource "azurerm_cdn_frontdoor_origin_group" "pub_ing" {
     successful_samples_required        = 3
   }
 }
-resource "azurerm_cdn_frontdoor_origin" "pub_ing_httpbin" {
+resource "azurerm_cdn_frontdoor_origin" "public_ingress_httpbin" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   name                          = "httpbin-pub-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pub_ing.0.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
 
   enabled                        = false
   certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.httpbin_ing_public.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.httpbin_ing_public.0.spec.0.rule.0.host
+  host_name                      = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
   priority                       = 1
   weight                         = 1000
 }
-resource "azurerm_cdn_frontdoor_origin" "pub_ing_azvote" {
+resource "azurerm_cdn_frontdoor_origin" "public_ingress_azvote" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   name                          = "azvote-pub-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pub_ing.0.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
 
   enabled                        = false
   certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.azvote_ing_public.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.azvote_ing_public.0.spec.0.rule.0.host
+  host_name                      = kubernetes_ingress_v1.public_ingress_azvote.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.public_ingress_azvote.0.spec.0.rule.0.host
   priority                       = 1
   weight                         = 1000
 }
-resource "azurerm_cdn_frontdoor_origin" "pub_ing_helloaks" {
+resource "azurerm_cdn_frontdoor_origin" "public_ingress_helloaks" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   name                          = "helloaks-pub-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pub_ing.0.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
 
   enabled                        = true
   certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.helloaks_ing_public.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.helloaks_ing_public.0.spec.0.rule.0.host
+  host_name                      = kubernetes_ingress_v1.public_ingress_helloaks.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.public_ingress_helloaks.0.spec.0.rule.0.host
   priority                       = 1
   weight                         = 1000
 }
 
-resource "azurerm_dns_cname_record" "pub_ing_ebdemos_info" {
+# AFD / Endpoint + resolution in public DNS for custom domain
+resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_1" {
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  name                     = "aksafdpls1"
+  cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
+}
+resource "azurerm_dns_cname_record" "public_ingress_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
@@ -654,33 +728,34 @@ resource "azurerm_dns_cname_record" "pub_ing_ebdemos_info" {
   ttl                 = 60
   record              = azurerm_cdn_frontdoor_endpoint.ep_for_option_1.0.host_name
 }
-resource "azurerm_cdn_frontdoor_custom_domain" "pub_ing_ebdemos_info" {
+resource "azurerm_cdn_frontdoor_custom_domain" "public_ingress_ebdemos_info" {
   depends_on = [azurerm_cdn_frontdoor_secret.tls_cert]
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
-  name                     = "${azurerm_dns_cname_record.pub_ing_ebdemos_info.0.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
+  name                     = "${azurerm_dns_cname_record.public_ingress_ebdemos_info.0.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
   dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id
-  host_name                = "${azurerm_dns_cname_record.pub_ing_ebdemos_info.0.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
+  host_name                = "${azurerm_dns_cname_record.public_ingress_ebdemos_info.0.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
   tls {
     certificate_type        = "CustomerCertificate"
     minimum_tls_version     = "TLS12"
     cdn_frontdoor_secret_id = azurerm_cdn_frontdoor_secret.tls_cert.id
   }
 }
-resource "azurerm_cdn_frontdoor_route" "pub_ing_route" {
+# AFD / Route from Endpoint to Origins
+resource "azurerm_cdn_frontdoor_route" "public_ingress_route" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   name                      = "route-to-public-ingresses-origins"
   cdn_frontdoor_endpoint_id = azurerm_cdn_frontdoor_endpoint.ep_for_option_1.0.id
   enabled                   = true
 
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pub_ing.0.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
   cdn_frontdoor_origin_ids = [
-    azurerm_cdn_frontdoor_origin.pub_ing_httpbin.0.id,
-    azurerm_cdn_frontdoor_origin.pub_ing_azvote.0.id,
-    azurerm_cdn_frontdoor_origin.pub_ing_helloaks.0.id,
+    azurerm_cdn_frontdoor_origin.public_ingress_httpbin.0.id,
+    azurerm_cdn_frontdoor_origin.public_ingress_azvote.0.id,
+    azurerm_cdn_frontdoor_origin.public_ingress_helloaks.0.id,
   ]
 
   forwarding_protocol    = "HttpsOnly"
@@ -689,7 +764,7 @@ resource "azurerm_cdn_frontdoor_route" "pub_ing_route" {
   supported_protocols    = ["Https"]
 
   cdn_frontdoor_custom_domain_ids = [
-    azurerm_cdn_frontdoor_custom_domain.pub_ing_ebdemos_info.0.id,
+    azurerm_cdn_frontdoor_custom_domain.public_ingress_ebdemos_info.0.id,
   ]
   link_to_default_domain = false
 }
@@ -697,7 +772,9 @@ resource "azurerm_cdn_frontdoor_route" "pub_ing_route" {
 # Visit endpoint at: https://aksafd-pub-ing.ebdemos.info
 
 
-##### OPTION 2: Expose the 3 Applications with Ingresses on the Internal Load Balancer #####
+########################################################################################
+### OPTION 2: Expose the 3 Applications with Ingresses on the Internal Load Balancer ###
+########################################################################################
 
 # Internal Ingress controller
 resource "azurerm_role_assignment" "aks_vnet_rassignment" {
@@ -708,7 +785,7 @@ resource "azurerm_role_assignment" "aks_vnet_rassignment" {
   scope                = azurerm_resource_group.this.id
   # Note: only VNet scope is requried for ILB, but to create the PLS, scope must be at the RG level.
 }
-resource "helm_release" "ing_ctrl_internal" {
+resource "helm_release" "internal_ingress_controller" {
   depends_on = [
     null_resource.helm_update,
     kubernetes_namespace.this,
@@ -717,8 +794,8 @@ resource "helm_release" "ing_ctrl_internal" {
 
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
-  name             = local.ing_internal_name
-  namespace        = local.ing_internal_name
+  name             = local.internal_ingress_name
+  namespace        = local.internal_ingress_name
   create_namespace = false
 
   repository = "https://kubernetes.github.io/ingress-nginx"
@@ -729,7 +806,7 @@ resource "helm_release" "ing_ctrl_internal" {
     <<-EOF
     controller:
       ingressClassResource:
-        name: "${local.ing_internal_name}"
+        name: "${local.internal_ingress_name}"
       config:
         enable-modsecurity: true
         enable-owasp-modsecurity-crs: true
@@ -750,7 +827,7 @@ resource "helm_release" "ing_ctrl_internal" {
           service.beta.kubernetes.io/azure-pls-resource-group: "${azurerm_resource_group.this.name}"
           service.beta.kubernetes.io/azure-pls-ip-configuration-subnet: "${azurerm_subnet.ilb.name}"
           service.beta.kubernetes.io/azure-pls-name: "${local.ilb_pls_name}"
-          service.beta.kubernetes.io/azure-pls-ip-configuration-ip-address-count: 2
+          service.beta.kubernetes.io/azure-pls-ip-configuration-ip-address-count: 1
           service.beta.kubernetes.io/azure-pls-proxy-protocol: "true"
           service.beta.kubernetes.io/azure-pls-visibility: "*"
           service.beta.kubernetes.io/azure-pls-auto-approval: "${var.subsc_id}"
@@ -775,29 +852,29 @@ resource "helm_release" "ing_ctrl_internal" {
 }
 
 # Internal Ingresses on the ILB
-resource "azurerm_private_dns_a_record" "httpbin_ing_internal_ebdemos_info" {
+resource "azurerm_private_dns_a_record" "internal_ingress_httpbin_ebdemos_info" {
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
-  name                = "${local.httpbin}-ing.int"
+  name                = "${local.httpbin}-ing-int"
   zone_name           = azurerm_private_dns_zone.this.0.name
   resource_group_name = azurerm_resource_group.this.name
   ttl                 = 60
-  records             = [data.kubernetes_service_v1.ingress_internal.0.status.0.load_balancer.0.ingress.0.ip]
+  records             = [data.kubernetes_service_v1.internal_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
 }
-resource "kubernetes_ingress_v1" "httpbin_ing_internal" {
-  depends_on = [azurerm_dns_a_record.httpbin_ing_public_ebdemos_info]
+resource "kubernetes_ingress_v1" "internal_ingress_httpbin_ing" {
+  depends_on = [azurerm_private_dns_a_record.internal_ingress_httpbin_ebdemos_info]
 
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   metadata {
-    name      = "${local.httpbin}-ing-internal"
+    name      = "${local.httpbin}-internal-ing"
     namespace = local.httpbin
   }
 
   spec {
-    ingress_class_name = local.ing_internal_name
+    ingress_class_name = local.internal_ingress_name
     rule {
-      host = trimsuffix(azurerm_private_dns_a_record.httpbin_ing_internal_ebdemos_info.0.fqdn, ".")
+      host = trimsuffix(azurerm_private_dns_a_record.internal_ingress_httpbin_ebdemos_info.0.fqdn, ".")
       http {
         path {
           backend {
@@ -819,29 +896,29 @@ resource "kubernetes_ingress_v1" "httpbin_ing_internal" {
     }
   }
 }
-resource "azurerm_private_dns_a_record" "azvote_ing_internal_ebdemos_info" {
+resource "azurerm_private_dns_a_record" "internal_ingress_azvote_ebdemos_info" {
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
-  name                = "${local.azure_vote}-ing.int"
+  name                = "${local.azure_vote}-ing-int"
   zone_name           = azurerm_private_dns_zone.this.0.name
   resource_group_name = azurerm_resource_group.this.name
   ttl                 = 60
-  records             = [data.kubernetes_service_v1.ingress_internal.0.status.0.load_balancer.0.ingress.0.ip]
+  records             = [data.kubernetes_service_v1.internal_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
 }
-resource "kubernetes_ingress_v1" "azvote_ing_internal" {
-  depends_on = [azurerm_private_dns_a_record.azvote_ing_internal_ebdemos_info]
+resource "kubernetes_ingress_v1" "internal_ingress_azvote" {
+  depends_on = [azurerm_private_dns_a_record.internal_ingress_azvote_ebdemos_info]
 
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   metadata {
-    name      = "${local.azure_vote}-ing-internal"
+    name      = "${local.azure_vote}-internal-ing"
     namespace = local.azure_vote
   }
 
   spec {
-    ingress_class_name = local.ing_internal_name
+    ingress_class_name = local.internal_ingress_name
     rule {
-      host = trimsuffix(azurerm_private_dns_a_record.azvote_ing_internal_ebdemos_info.0.fqdn, ".")
+      host = trimsuffix(azurerm_private_dns_a_record.internal_ingress_azvote_ebdemos_info.0.fqdn, ".")
       http {
         path {
           backend {
@@ -863,29 +940,29 @@ resource "kubernetes_ingress_v1" "azvote_ing_internal" {
     }
   }
 }
-resource "azurerm_private_dns_a_record" "helloaks_ing_internal_ebdemos_info" {
+resource "azurerm_private_dns_a_record" "internal_ingress_hellpaks_ebdemos_info" {
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
-  name                = "${local.hello_aks}-ing.int"
+  name                = "${local.hello_aks}-ing-int"
   zone_name           = azurerm_private_dns_zone.this.0.name
   resource_group_name = azurerm_resource_group.this.name
   ttl                 = 60
-  records             = [data.kubernetes_service_v1.ingress_internal.0.status.0.load_balancer.0.ingress.0.ip]
+  records             = [data.kubernetes_service_v1.internal_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
 }
-resource "kubernetes_ingress_v1" "helloaks_ing_internal" {
-  depends_on = [azurerm_private_dns_a_record.helloaks_ing_internal_ebdemos_info]
+resource "kubernetes_ingress_v1" "internal_ingress_helloaks" {
+  depends_on = [azurerm_private_dns_a_record.internal_ingress_hellpaks_ebdemos_info]
 
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   metadata {
-    name      = "${local.hello_aks}-ing-internal"
+    name      = "${local.hello_aks}-internal-ing"
     namespace = local.hello_aks
   }
 
   spec {
-    ingress_class_name = local.ing_internal_name
+    ingress_class_name = local.internal_ingress_name
     rule {
-      host = trimsuffix(azurerm_private_dns_a_record.helloaks_ing_internal_ebdemos_info.0.fqdn, ".")
+      host = trimsuffix(azurerm_private_dns_a_record.internal_ingress_hellpaks_ebdemos_info.0.fqdn, ".")
       http {
         path {
           backend {
@@ -915,10 +992,10 @@ resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_2" {
   name                     = "aksafdpls2"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
 }
-resource "azurerm_cdn_frontdoor_origin_group" "int_ing" {
+resource "azurerm_cdn_frontdoor_origin_group" "internal_ingress_origin_grp" {
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
-  name                     = "ilb-ingresses"
+  name                     = "internal-ingresses"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
   session_affinity_enabled = false
 
@@ -935,85 +1012,95 @@ resource "azurerm_cdn_frontdoor_origin_group" "int_ing" {
     successful_samples_required        = 3
   }
 }
-resource "azurerm_cdn_frontdoor_origin" "int_ing_httpbin" {
+resource "azurerm_cdn_frontdoor_origin" "internal_ingress_httpbin_origin" {
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   name                          = "httpbin-int-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.0.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.0.id
 
-  enabled                        = true
+  enabled                        = false
   certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.httpbin_ing_internal.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.httpbin_ing_internal.0.spec.0.rule.0.host
+  host_name                      = kubernetes_ingress_v1.internal_ingress_httpbin_ing.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.internal_ingress_httpbin_ing.0.spec.0.rule.0.host
   priority                       = 1
   weight                         = 1000
 
   private_link {
-    request_message        = "Please approve AFD to ILB PLS connection"
+    request_message        = "Please approve AFD httpbin-int-ing origin PE connection to ILB through PLS connection"
     location               = azurerm_resource_group.this.location
     private_link_target_id = local.ilb_pls_id
   }
 }
 ########   APPROVE THE Private Endpoint Connection   ######## on pls-ingress-internal
 
-resource "azurerm_cdn_frontdoor_origin" "int_ing_azvote" {
+resource "azurerm_cdn_frontdoor_origin" "internal_ingress_azvote_origin" {
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   name                          = "azvote-int-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.0.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.0.id
 
-  enabled                        = true
+  enabled                        = false
   certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.azvote_ing_internal.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.azvote_ing_internal.0.spec.0.rule.0.host
+  host_name                      = kubernetes_ingress_v1.internal_ingress_azvote.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.internal_ingress_azvote.0.spec.0.rule.0.host
   priority                       = 1
   weight                         = 1000
 
   private_link {
-    request_message        = "Please approve AFD to ILB PLS connection"
+    request_message        = "Please approve AFD azvote-int-ing origin PE connection to ILB through PLS connection"
     location               = azurerm_resource_group.this.location
     private_link_target_id = local.ilb_pls_id
   }
 }
-resource "azurerm_cdn_frontdoor_origin" "int_ing_helloaks" {
+resource "azurerm_cdn_frontdoor_origin" "internal_ingress_helloaks_origin" {
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   name                          = "helloaks-int-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.0.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.0.id
 
   enabled                        = true
   certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.helloaks_ing_internal.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.helloaks_ing_internal.0.spec.0.rule.0.host
-  priority                       = 1
-  weight                         = 1000
+  # host_name                      = kubernetes_ingress_v1.internal_ingress_helloaks.0.spec.0.rule.0.host
+  host_name          = "192.168.0.11"
+  origin_host_header = kubernetes_ingress_v1.internal_ingress_helloaks.0.spec.0.rule.0.host
+  priority           = 1
+  weight             = 1000
 
   private_link {
-    request_message        = "Please approve AFD to ILB PLS connection"
+    request_message        = "Please approve AFD helloaks-int-ing origin PE connection to ILB through PLS connection"
     location               = azurerm_resource_group.this.location
     private_link_target_id = local.ilb_pls_id
   }
 }
-resource "azurerm_dns_cname_record" "int_ing_ebdemos_info" {
+resource "azurerm_dns_cname_record" "internal_ingress_ebdemos_info_public_cname" {
   provider = azurerm.s2-connectivity
 
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
-  name                = "aksafd-pub-ing"
+  name                = "aksafd-internal-ing"
   zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
   resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
   ttl                 = 60
   record              = azurerm_cdn_frontdoor_endpoint.ep_for_option_2.0.host_name
 }
-resource "azurerm_cdn_frontdoor_custom_domain" "int_ing_ebdemos_info" {
+resource "azurerm_private_dns_cname_record" "internal_ingress_ebdemos_info_private_cname" {
+  count = local.deploy_aks && local.deploy_option2 ? 1 : 0
+
+  name                = "aksafd-internal-ing"
+  zone_name           = azurerm_private_dns_zone.this.0.name
+  resource_group_name = azurerm_resource_group.this.name
+  ttl                 = 60
+  record              = azurerm_cdn_frontdoor_endpoint.ep_for_option_2.0.host_name
+}
+resource "azurerm_cdn_frontdoor_custom_domain" "internal_ingress_ebdemos_info" {
   depends_on = [azurerm_cdn_frontdoor_secret.tls_cert]
 
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
-  name                     = "${azurerm_dns_cname_record.pub_ing_ebdemos_info.0.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
+  name                     = "${azurerm_dns_cname_record.internal_ingress_ebdemos_info_public_cname.0.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
   dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id
-  host_name                = "${azurerm_dns_cname_record.pub_ing_ebdemos_info.0.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
+  host_name                = "${azurerm_dns_cname_record.internal_ingress_ebdemos_info_public_cname.0.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
   # https://testext.ebdemos.info
 
   tls {
@@ -1022,18 +1109,18 @@ resource "azurerm_cdn_frontdoor_custom_domain" "int_ing_ebdemos_info" {
     cdn_frontdoor_secret_id = azurerm_cdn_frontdoor_secret.tls_cert.id
   }
 }
-resource "azurerm_cdn_frontdoor_route" "int_ing_route" {
+resource "azurerm_cdn_frontdoor_route" "internal_ingress_route" {
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   name                      = "route-to-internal-ingresses"
   cdn_frontdoor_endpoint_id = azurerm_cdn_frontdoor_endpoint.ep_for_option_2.0.id
   enabled                   = true
 
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.0.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.0.id
   cdn_frontdoor_origin_ids = [
-    azurerm_cdn_frontdoor_origin.int_ing_httpbin.0.id,
-    azurerm_cdn_frontdoor_origin.int_ing_azvote.0.id,
-    azurerm_cdn_frontdoor_origin.int_ing_helloaks.0.id,
+    azurerm_cdn_frontdoor_origin.internal_ingress_httpbin_origin.0.id,
+    azurerm_cdn_frontdoor_origin.internal_ingress_azvote_origin.0.id,
+    azurerm_cdn_frontdoor_origin.internal_ingress_helloaks_origin.0.id,
   ]
 
   forwarding_protocol    = "HttpsOnly"
@@ -1042,11 +1129,16 @@ resource "azurerm_cdn_frontdoor_route" "int_ing_route" {
   supported_protocols    = ["Https"]
 
   cdn_frontdoor_custom_domain_ids = [
-    azurerm_cdn_frontdoor_custom_domain.int_ing_ebdemos_info.0.id,
+    azurerm_cdn_frontdoor_custom_domain.internal_ingress_ebdemos_info.0.id,
   ]
-  link_to_default_domain = false
+  link_to_default_domain = true
 }
 #*/
+# Be patient, AFD is slow, up to 10 minutes, then:
+# Visit endpoint at: https://aksafd-internal-ing.ebdemos.info
+# curl -I https://aksafd-internal-ing.ebdemos.info
+# If "Service unavailable", check the PLS approval status in the Azure Portal
+# Note: you will get HTTP/1.1 504 backs for sometime, before the site is up
 
 /*
 ##### OPTION 3: Expose the 3 Applications with a LoadBalancer Service type on the Internal Load Balancer and a PLS #####
@@ -1179,7 +1271,7 @@ resource "azurerm_cdn_frontdoor_origin_group" "pls_svc" {
 }
 resource "azurerm_cdn_frontdoor_origin" "pls_azvote" {
   name                          = "azvote-int"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.id
 
   enabled                        = true
   certificate_name_check_enabled = true
@@ -1196,7 +1288,7 @@ resource "azurerm_cdn_frontdoor_origin" "pls_azvote" {
 }
 resource "azurerm_cdn_frontdoor_origin" "pls_httpbin" {
   name                          = "httpbin-int"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.id
 
   enabled                        = false
   certificate_name_check_enabled = true
@@ -1238,7 +1330,7 @@ resource "azurerm_cdn_frontdoor_route" "int_route" {
   cdn_frontdoor_endpoint_id = azurerm_cdn_frontdoor_endpoint.ep_1.id
   enabled                   = true
 
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.int_ing.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.id
   cdn_frontdoor_origin_ids = [
     azurerm_cdn_frontdoor_origin.int_azvote.id,
     azurerm_cdn_frontdoor_origin.int_httpbin.id,
