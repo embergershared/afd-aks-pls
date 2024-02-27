@@ -19,14 +19,6 @@ locals {
     "Terraform_state" = "tfstates-s4-spokes/aks-afd-pls"
   })
 
-  # List of resources to create a Diagnostic setting for:
-  res_for_diag_settings_ids = concat(
-    [azurerm_cdn_frontdoor_profile.this.id],
-    local.deploy_aks ? [azurerm_kubernetes_cluster.this.0.id] : [],
-  )
-  diag_settings = { for res_id in local.res_for_diag_settings_ids :
-    "${reverse(split("/", res_id))[0]}" => res_id
-  }
 
   # Namespaces to use
   internal_ingress_name = "ingress-internal"
@@ -67,11 +59,12 @@ locals {
 
   # Deployment steps:
   # 1. All controls variables below set to "false", run terraform apply to deploy:
-  #    - RG, KV, AFD, VNet, Storage Account and Log Analytics Workspace.
+  #    - RG, KV, AFD, VNet, Storage Account, Log Analytics Workspace.
   #
   # 2. Set "deploy_aks" to "true", run terraform apply to deploy:
   #    - the AKS cluster,
-  #    - the namespaces.
+  #    - the namespaces,
+  #    -  and Diagnostic settings.
   #
   # 3. Set "kubernetes_manifest_ready" to "true", run terraform apply to deploy:
   #    - all the kubernetes_manifest based resources:

@@ -288,11 +288,9 @@ resource "azurerm_storage_account_network_rules" "this" {
   bypass                     = ["AzureServices"]
 }
 # Creates the Azure Diagnostics Setting for the Resources:
-resource "azurerm_monitor_diagnostic_setting" "this" {
-  for_each = local.diag_settings
-
-  name               = "${each.key}-diag"
-  target_resource_id = each.value
+resource "azurerm_monitor_diagnostic_setting" "diag_afd" {
+  name               = "${azurerm_cdn_frontdoor_profile.this.name}-diag"
+  target_resource_id = azurerm_cdn_frontdoor_profile.this.id
 
   eventhub_name                  = null
   eventhub_authorization_rule_id = null
@@ -302,17 +300,17 @@ resource "azurerm_monitor_diagnostic_setting" "this" {
   partner_solution_id            = null
 
   dynamic "enabled_log" {
-    for_each = lookup(data.azurerm_monitor_diagnostic_categories.this, each.key)["logs"]
+    for_each = data.azurerm_monitor_diagnostic_categories.diag_cat_afd.log_category_types
     content {
       category = enabled_log.value
     }
   }
 
   dynamic "metric" {
-    for_each = lookup(data.azurerm_monitor_diagnostic_categories.this, each.key)["metrics"]
+    for_each = data.azurerm_monitor_diagnostic_categories.diag_cat_afd.metrics
     content {
       category = metric.value
-      enabled  = true
+      enabled  = false
     }
   }
 
