@@ -59,12 +59,13 @@ locals {
 
   # Deployment steps:
   # 1. All controls variables below set to "false", run terraform apply to deploy:
-  #    - RG, KV, AFD, VNet, Storage Account, Log Analytics Workspace.
+  #    - RG, KV, AFD, VNet, Storage Account, Log Analytics Workspace,
+  #    - AFD Diagnostic settings.
   #
   # 2. Set "deploy_aks" to "true", run terraform apply to deploy:
   #    - the AKS cluster,
   #    - the namespaces,
-  #    -  and Diagnostic settings.
+  #    - AKS Diagnostic settings.
   #
   # 3. Set "kubernetes_manifest_ready" to "true", run terraform apply to deploy:
   #    - all the kubernetes_manifest based resources:
@@ -94,7 +95,7 @@ locals {
   #    - the Azure Front Door routing rule.
 
   # Deployment control variables
-  deploy_aks                = false
+  deploy_aks                = true
   kubernetes_manifest_ready = false # Required to manage that resources of type kubernetes_manifest will query the cluster, even if not created
   deploy_option1            = false # Front Door to Public kubernetes Ingresses
   deploy_option2            = false # Front Door to Internal kubernetes Ingresses through Private Link Service on the Internal Load Balancer
