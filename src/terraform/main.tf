@@ -203,6 +203,41 @@ resource "azurerm_kubernetes_cluster_node_pool" "userpool1" {
   workload_runtime = "OCIContainer"
   zones            = []
 }
+# Diagnostics Setting for the AKS cluster
+resource "azurerm_monitor_diagnostic_setting" "diag_aks" {
+  count = local.deploy_aks ? 1 : 0
+
+  name               = "${azurerm_kubernetes_cluster.this.0.name}-diag"
+  target_resource_id = azurerm_kubernetes_cluster.this.0.id
+
+  eventhub_name                  = null
+  eventhub_authorization_rule_id = null
+  log_analytics_workspace_id     = azurerm_log_analytics_workspace.this.id
+  log_analytics_destination_type = "AzureDiagnostics"
+  storage_account_id             = azurerm_storage_account.this.id
+  partner_solution_id            = null
+
+  dynamic "enabled_log" {
+    for_each = data.azurerm_monitor_diagnostic_categories.diag_cat_aks.0.log_category_types
+    content {
+      category = enabled_log.value
+    }
+  }
+
+  dynamic "metric" {
+    for_each = data.azurerm_monitor_diagnostic_categories.diag_cat_aks.0.metrics
+    content {
+      category = metric.value
+      enabled  = false
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      log_analytics_destination_type,
+    ]
+  }
+}
 
 ##### Create all the namespaces to deploy the CSI secret provider in them
 resource "kubernetes_namespace" "this" {
@@ -287,7 +322,7 @@ resource "azurerm_storage_account_network_rules" "this" {
   virtual_network_subnet_ids = []
   bypass                     = ["AzureServices"]
 }
-# Creates the Azure Diagnostics Setting for the Resources:
+# Diagnostics Setting for the AFD
 resource "azurerm_monitor_diagnostic_setting" "diag_afd" {
   name               = "${azurerm_cdn_frontdoor_profile.this.name}-diag"
   target_resource_id = azurerm_cdn_frontdoor_profile.this.id
@@ -320,6 +355,7 @@ resource "azurerm_monitor_diagnostic_setting" "diag_afd" {
     ]
   }
 }
+
 
 ##### AKS / Create the CSI drivers in all namespaces for Key vault integration
 resource "azurerm_role_assignment" "aks_kv_rassignment" {
@@ -370,6 +406,7 @@ resource "kubernetes_manifest" "kv_csi_secret_providers" {
         EOF
   )
 }
+
 
 ##### AKS / Deploy the 3 Apps for the tests
 # / Httpbin
@@ -1137,6 +1174,12 @@ resource "azurerm_cdn_frontdoor_route" "internal_ingress_route" {
 # curl -I https://aksafd-internal-ing.ebdemos.info
 # If "Service unavailable", check the PLS approval status in the Azure Portal
 # Note: you will get HTTP/1.1 504 backs for sometime, before the site is up
+
+
+
+########################################################################################
+### OPTION 3: Expose the 3 Applications with Kubernetes Service and their PLS        ###
+########################################################################################
 
 /*
 ##### OPTION 3: Expose the 3 Applications with a LoadBalancer Service type on the Internal Load Balancer and a PLS #####
