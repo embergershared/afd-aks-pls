@@ -4,11 +4,11 @@ data "http" "icanhazip" {
   url = "http://icanhazip.com"
 }
 # Get the Azure Public DNS Zone to create the AFD Endpoints CNAME records
-data "azurerm_dns_zone" "public_dnz_zone" {
+data "azurerm_dns_zone" "public_dns_zone" {
   provider = azurerm.s2-connectivity
 
-  name                = split("/", var.dns_zone_id)[8]
-  resource_group_name = split("/", var.dns_zone_id)[4]
+  name                = split("/", var.public_dns_zone_id)[8]
+  resource_group_name = split("/", var.public_dns_zone_id)[4]
 }
 
 # Gather the Diagnostic categories for the selected resources

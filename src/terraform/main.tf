@@ -548,8 +548,8 @@ resource "azurerm_dns_a_record" "public_ingress_httpbin_ebdemos_info" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   name                = "${local.httpbin}-ing"
-  zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
-  resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
+  zone_name           = data.azurerm_dns_zone.public_dns_zone.name
+  resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
   ttl                 = 60
   records             = [data.kubernetes_service_v1.public_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
 }
@@ -595,8 +595,8 @@ resource "azurerm_dns_a_record" "public_ingress_azvote_ebdemos_info" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   name                = "${local.azure_vote}-ing"
-  zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
-  resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
+  zone_name           = data.azurerm_dns_zone.public_dns_zone.name
+  resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
   ttl                 = 60
   records             = [data.kubernetes_service_v1.public_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
 }
@@ -641,8 +641,8 @@ resource "azurerm_dns_a_record" "public_ingress_helloaks_ebdemos_info" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   name                = "${local.hello_aks}-ing"
-  zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
-  resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
+  zone_name           = data.azurerm_dns_zone.public_dns_zone.name
+  resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
   ttl                 = 60
   records             = [data.kubernetes_service_v1.public_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
 }
@@ -757,8 +757,8 @@ resource "azurerm_dns_cname_record" "public_ingress_ebdemos_info" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
   name                = "aksafd-pub-ing"
-  zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
-  resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
+  zone_name           = data.azurerm_dns_zone.public_dns_zone.name
+  resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
   ttl                 = 60
   record              = azurerm_cdn_frontdoor_endpoint.ep_for_option_1.0.host_name
 }
@@ -767,10 +767,10 @@ resource "azurerm_cdn_frontdoor_custom_domain" "public_ingress_ebdemos_info" {
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
-  name                     = "${azurerm_dns_cname_record.public_ingress_ebdemos_info.0.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
+  name                     = "${azurerm_dns_cname_record.public_ingress_ebdemos_info.0.name}-${replace(data.azurerm_dns_zone.public_dns_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id
-  host_name                = "${azurerm_dns_cname_record.public_ingress_ebdemos_info.0.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
+  dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
+  host_name                = "${azurerm_dns_cname_record.public_ingress_ebdemos_info.0.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
   tls {
     certificate_type        = "CustomerCertificate"
     minimum_tls_version     = "TLS12"
@@ -1112,8 +1112,8 @@ resource "azurerm_dns_cname_record" "internal_ingress_ebdemos_info_public_cname"
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
   name                = "aksafd-internal-ing"
-  zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
-  resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
+  zone_name           = data.azurerm_dns_zone.public_dns_zone.name
+  resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
   ttl                 = 60
   record              = azurerm_cdn_frontdoor_endpoint.ep_for_option_2.0.host_name
 }
@@ -1131,10 +1131,10 @@ resource "azurerm_cdn_frontdoor_custom_domain" "internal_ingress_ebdemos_info" {
 
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
-  name                     = "${azurerm_dns_cname_record.internal_ingress_ebdemos_info_public_cname.0.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
+  name                     = "${azurerm_dns_cname_record.internal_ingress_ebdemos_info_public_cname.0.name}-${replace(data.azurerm_dns_zone.public_dns_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id
-  host_name                = "${azurerm_dns_cname_record.internal_ingress_ebdemos_info_public_cname.0.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
+  dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
+  host_name                = "${azurerm_dns_cname_record.internal_ingress_ebdemos_info_public_cname.0.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
   # https://testext.ebdemos.info
 
   tls {
@@ -1348,16 +1348,16 @@ resource "azurerm_dns_cname_record" "testint_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
   name                = "testint"
-  zone_name           = data.azurerm_dns_zone.public_dnz_zone.name
-  resource_group_name = data.azurerm_dns_zone.public_dnz_zone.resource_group_name
+  zone_name           = data.azurerm_dns_zone.public_dns_zone.name
+  resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
   ttl                 = 60
   record              = azurerm_cdn_frontdoor_endpoint.ep_1.host_name
 }
 resource "azurerm_cdn_frontdoor_custom_domain" "testint_ebdemos_info" {
-  name                     = "${azurerm_dns_cname_record.testint_ebdemos_info.name}-${replace(data.azurerm_dns_zone.public_dnz_zone.name, ".", "-")}"
+  name                     = "${azurerm_dns_cname_record.testint_ebdemos_info.name}-${replace(data.azurerm_dns_zone.public_dns_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  dns_zone_id              = data.azurerm_dns_zone.public_dnz_zone.id
-  host_name                = "${azurerm_dns_cname_record.testint_ebdemos_info.name}.${data.azurerm_dns_zone.public_dnz_zone.name}"
+  dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
+  host_name                = "${azurerm_dns_cname_record.testint_ebdemos_info.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
   # https://testext.ebdemos.info
 
   tls {

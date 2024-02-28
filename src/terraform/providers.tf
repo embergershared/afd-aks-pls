@@ -17,10 +17,10 @@ provider "azurerm" {
 provider "azurerm" {
   alias = "s2-connectivity"
 
-  tenant_id       = var.tenant_id
+  tenant_id       = var.conn_tenant_id
   subscription_id = var.conn_subsc_id
-  client_id       = var.client_id
-  client_secret   = var.client_secret
+  client_id       = var.conn_client_id
+  client_secret   = var.conn_client_secret
 
   skip_provider_registration = true
 
