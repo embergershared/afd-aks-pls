@@ -103,7 +103,6 @@ resource "azurerm_subnet" "pods" {
   }
 }
 
-
 resource "azurerm_private_dns_zone" "this" {
   count = local.deploy_aks && local.deploy_option2 ? 1 : 0
 
