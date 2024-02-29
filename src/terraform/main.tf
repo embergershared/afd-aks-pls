@@ -408,60 +408,400 @@ resource "kubernetes_manifest" "kv_csi_secret_providers" {
 
 
 ##### AKS / Deploy the 3 Apps for the tests
-# / Httpbin
-resource "kubernetes_manifest" "httpbin_dep" {
-  depends_on = [kubernetes_namespace.this]
-  count      = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
-
-  manifest = yamldecode(file("httpbin/2.httpbin-dep.yaml"))
+# / Hello AKS
+resource "kubernetes_deployment_v1" "helloaks_dep_v1" {
+  metadata {
+    name      = "hello-aks-dep"
+    namespace = kubernetes_namespace.this[local.hello_aks].metadata[0].name
+  }
+  spec {
+    replicas = 1
+    selector {
+      match_labels = {
+        app = "hello-aks"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "hello-aks"
+        }
+      }
+      spec {
+        node_selector = {
+          "kubernetes.io/os"          = "linux"
+          "kubernetes.azure.com/mode" = "user"
+        }
+        container {
+          name              = "hello-aks"
+          image             = "mcr.microsoft.com/azuredocs/aks-helloworld:v1"
+          image_pull_policy = "IfNotPresent"
+          resources {
+            requests = {
+              cpu    = "125m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "250m"
+              memory = "128Mi"
+            }
+          }
+          port {
+            container_port = 80
+            protocol       = "TCP"
+          }
+          env {
+            name  = "TITLE"
+            value = "Hello AKS! Served from hello-aks-dep."
+          }
+          volume_mount {
+            name       = "secrets-store-inline"
+            mount_path = "/mnt/secrets-store"
+            read_only  = true
+          }
+        }
+        volume {
+          name = "secrets-store-inline"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = local.secret_provider_class_name
+            }
+          }
+        }
+      }
+    }
+  }
 }
-resource "kubernetes_manifest" "httpbin_svc" {
-  depends_on = [kubernetes_manifest.httpbin_dep]
-  count      = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+resource "kubernetes_service_v1" "helloaks_svc_v1" {
+  metadata {
+    name      = "hello-aks-svc-clusip"
+    namespace = kubernetes_namespace.this[local.hello_aks].metadata[0].name
+  }
+  spec {
+    selector = {
+      app = "hello-aks"
+    }
+    port {
+      port = 80
+      # target_port = 80
+    }
+    type = "ClusterIP"
+  }
+}
 
-  manifest = yamldecode(file("httpbin/3.httpbin-svc-clusip.yaml"))
+# / Httpbin
+resource "kubernetes_deployment_v1" "httpbin_dep_v1" {
+  metadata {
+    name      = "httpbin-dep"
+    namespace = kubernetes_namespace.this[local.httpbin].metadata[0].name
+  }
+  spec {
+    replicas = 1
+    selector {
+      match_labels = {
+        app = "httpbin"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "httpbin"
+        }
+      }
+      spec {
+        node_selector = {
+          "kubernetes.io/os"          = "linux"
+          "kubernetes.azure.com/mode" = "user"
+        }
+        container {
+          name              = "httpbin"
+          image             = "docker.io/kennethreitz/httpbin"
+          image_pull_policy = "IfNotPresent"
+          resources {
+            requests = {
+              cpu    = "125m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "250m"
+              memory = "128Mi"
+            }
+          }
+          port {
+            container_port = 80
+            protocol       = "TCP"
+          }
+          env {
+            name  = "PORT"
+            value = "80"
+          }
+          volume_mount {
+            name       = "secrets-store-inline"
+            mount_path = "/mnt/secrets-store"
+            read_only  = true
+          }
+        }
+        volume {
+          name = "secrets-store-inline"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = local.secret_provider_class_name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+resource "kubernetes_service_v1" "httpbin_svc_v1" {
+  metadata {
+    name      = "httpbin-svc-clusip"
+    namespace = kubernetes_namespace.this[local.httpbin].metadata[0].name
+  }
+  spec {
+    selector = {
+      app = "httpbin"
+    }
+    port {
+      port        = 80
+      target_port = 80
+    }
+    type = "ClusterIP"
+  }
 }
 
 # / Azure vote
-resource "kubernetes_manifest" "azvote_back_dep" {
-  depends_on = [kubernetes_namespace.this]
-  count      = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
-
-  manifest = yamldecode(file("azure-vote/2.az-vote-back-dep.yaml"))
+resource "kubernetes_deployment_v1" "azvote_back_dep_v1" {
+  metadata {
+    name      = "azure-vote-back-dep"
+    namespace = kubernetes_namespace.this[local.azure_vote].metadata[0].name
+  }
+  spec {
+    replicas = 1
+    selector {
+      match_labels = {
+        app = "azure-vote-back"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "azure-vote-back"
+        }
+      }
+      spec {
+        node_selector = {
+          "kubernetes.io/os"          = "linux"
+          "kubernetes.azure.com/mode" = "user"
+        }
+        container {
+          name              = "azure-vote-back"
+          image             = "mcr.microsoft.com/oss/bitnami/redis:6.0.8"
+          image_pull_policy = "IfNotPresent"
+          resources {
+            requests = {
+              cpu    = "100m"
+              memory = "128Mi"
+            }
+            limits = {
+              cpu    = "250m"
+              memory = "256Mi"
+            }
+          }
+          port {
+            container_port = 6379
+            name           = "redis"
+          }
+          env {
+            name  = "ALLOW_EMPTY_PASSWORD"
+            value = "yes"
+          }
+        }
+      }
+    }
+  }
 }
-resource "kubernetes_manifest" "azvote_back_svc" {
-  depends_on = [kubernetes_manifest.azvote_back_dep]
-  count      = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
-
-  manifest = yamldecode(file("azure-vote/3.az-vote-back-svc-clusip.yaml"))
+resource "kubernetes_service_v1" "azvote_back_svc_v1" {
+  metadata {
+    name      = "azure-vote-back-svc-clusip"
+    namespace = kubernetes_namespace.this[local.azure_vote].metadata[0].name
+  }
+  spec {
+    selector = {
+      app = "azure-vote-back"
+    }
+    port {
+      port = 6379
+    }
+    type = "ClusterIP"
+  }
 }
-resource "kubernetes_manifest" "azvote_front_dep" {
-  depends_on = [kubernetes_namespace.this]
-  count      = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
-
-  manifest = yamldecode(file("azure-vote/4.az-vote-front-dep.yaml"))
+resource "kubernetes_deployment_v1" "azvote_front_dep_v1" {
+  metadata {
+    name      = "azure-vote-front-dep"
+    namespace = kubernetes_namespace.this[local.azure_vote].metadata[0].name
+  }
+  spec {
+    replicas = 1
+    selector {
+      match_labels = {
+        app = "azure-vote-front"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "azure-vote-front"
+        }
+      }
+      spec {
+        node_selector = {
+          "kubernetes.io/os"          = "linux"
+          "kubernetes.azure.com/mode" = "user"
+        }
+        container {
+          name              = "azure-vote-front"
+          image             = "mcr.microsoft.com/azuredocs/azure-vote-front:v1"
+          image_pull_policy = "IfNotPresent"
+          resources {
+            requests = {
+              cpu    = "100m"
+              memory = "128Mi"
+            }
+            limits = {
+              cpu    = "250m"
+              memory = "256Mi"
+            }
+          }
+          port {
+            container_port = 80
+          }
+          env {
+            name  = "REDIS"
+            value = "azure-vote-back-svc-clusip"
+          }
+          volume_mount {
+            name       = "secrets-store-inline"
+            mount_path = "/mnt/secrets-store"
+            read_only  = true
+          }
+        }
+        volume {
+          name = "secrets-store-inline"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = local.secret_provider_class_name
+            }
+          }
+        }
+      }
+    }
+  }
 }
-resource "kubernetes_manifest" "azvote_front_svc" {
-  depends_on = [kubernetes_manifest.azvote_front_dep]
-  count      = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
-
-  manifest = yamldecode(file("azure-vote/5.az-vote-front-svc-clusip.yaml"))
+resource "kubernetes_service_v1" "azvote_front_svc_v1" {
+  metadata {
+    name      = "azure-vote-front-svc-clusip"
+    namespace = kubernetes_namespace.this[local.azure_vote].metadata[0].name
+  }
+  spec {
+    selector = {
+      app = "azure-vote-front"
+    }
+    port {
+      port = 80
+    }
+    type = "ClusterIP"
+  }
 }
 
-# / Hello AKS
-resource "kubernetes_manifest" "helloaks_dep" {
-  depends_on = [kubernetes_namespace.this]
-  count      = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
-
-  manifest = yamldecode(file("hello-aks/2.hello-aks-dep.yaml"))
+# / Whoami
+resource "kubernetes_deployment_v1" "whoami_dep_v1" {
+  metadata {
+    name      = "whoami-dep"
+    namespace = kubernetes_namespace.this[local.whoami].metadata[0].name
+  }
+  spec {
+    replicas = 1
+    selector {
+      match_labels = {
+        app = "whoami"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "whoami"
+        }
+      }
+      spec {
+        node_selector = {
+          "kubernetes.io/os"          = "linux"
+          "kubernetes.azure.com/mode" = "user"
+        }
+        container {
+          name              = "whoami"
+          image             = "docker.io/traefik/whoami"
+          image_pull_policy = "IfNotPresent"
+          resources {
+            requests = {
+              cpu    = "125m"
+              memory = "64Mi"
+            }
+            limits = {
+              cpu    = "250m"
+              memory = "128Mi"
+            }
+          }
+          port {
+            container_port = 80
+            protocol       = "TCP"
+          }
+          env {
+            name  = "PORT"
+            value = "80"
+          }
+          volume_mount {
+            name       = "secrets-store-inline"
+            mount_path = "/mnt/secrets-store"
+            read_only  = true
+          }
+        }
+        volume {
+          name = "secrets-store-inline"
+          csi {
+            driver    = "secrets-store.csi.k8s.io"
+            read_only = true
+            volume_attributes = {
+              secretProviderClass = local.secret_provider_class_name
+            }
+          }
+        }
+      }
+    }
+  }
 }
-resource "kubernetes_manifest" "helloaks_svc" {
-  depends_on = [kubernetes_manifest.helloaks_dep]
-  count      = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
-
-  manifest = yamldecode(file("hello-aks/3.hello-aks-svc-clusip.yaml"))
+resource "kubernetes_service_v1" "whoami_svc_v1" {
+  metadata {
+    name      = "whoami-svc-clusip"
+    namespace = kubernetes_namespace.this[local.whoami].metadata[0].name
+  }
+  spec {
+    selector = {
+      app = "whoami"
+    }
+    port {
+      port        = 80
+      target_port = 80
+    }
+    type = "ClusterIP"
+  }
 }
-
 
 ##### AKS / Prepare Helm deployed Ingress controllers
 # helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
@@ -482,6 +822,8 @@ resource "null_resource" "helm_update" {
     command = "helm repo update"
   }
 }
+
+
 
 ########################################################################################
 ### OPTION 1: Expose the 3 Applications with Ingresses on the Public Load Balancer   ###
@@ -587,6 +929,79 @@ resource "kubernetes_ingress_v1" "public_ingress_httpbin" {
     }
   }
 }
+resource "azurerm_cdn_frontdoor_origin" "public_ingress_httpbin" {
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  name                          = "httpbin-pub-ing"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
+
+  enabled                        = true
+  certificate_name_check_enabled = true
+  host_name                      = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
+  priority                       = 1
+  weight                         = 1000
+}
+
+# AKS / Whoami
+resource "azurerm_dns_a_record" "public_ingress_whoami_ebdemos_info" {
+  provider = azurerm.s2-connectivity
+
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  name                = "${local.whoami}-ing"
+  zone_name           = data.azurerm_dns_zone.public_dns_zone.name
+  resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
+  ttl                 = 60
+  records             = [data.kubernetes_service_v1.public_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
+}
+resource "kubernetes_ingress_v1" "public_ingress_whoami" {
+  depends_on = [azurerm_dns_a_record.public_ingress_whoami_ebdemos_info]
+
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  wait_for_load_balancer = true
+  metadata {
+    name      = "${local.whoami}-ing-public"
+    namespace = local.whoami
+  }
+
+  spec {
+    ingress_class_name = local.public_ingress_name
+    rule {
+      host = trimsuffix(azurerm_dns_a_record.public_ingress_whoami_ebdemos_info.0.fqdn, ".")
+      http {
+        path {
+          backend {
+            service {
+              name = "whoami-svc-clusip"
+              port { number = 80 }
+            }
+          }
+          path_type = "Prefix"
+          path      = "/"
+        }
+      }
+    }
+
+    tls {
+      secret_name = "kv-${azurerm_key_vault_certificate.this.name}-tls-csi"
+    }
+  }
+}
+resource "azurerm_cdn_frontdoor_origin" "public_ingress_whoami" {
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  name                          = "whoami-pub-ing"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
+
+  enabled                        = true
+  certificate_name_check_enabled = true
+  host_name                      = kubernetes_ingress_v1.public_ingress_whoami.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.public_ingress_whoami.0.spec.0.rule.0.host
+  priority                       = 1
+  weight                         = 1000
+}
 
 # AKS / Azure Vote
 resource "azurerm_dns_a_record" "public_ingress_azvote_ebdemos_info" {
@@ -632,6 +1047,19 @@ resource "kubernetes_ingress_v1" "public_ingress_azvote" {
       secret_name = "kv-${azurerm_key_vault_certificate.this.name}-tls-csi"
     }
   }
+}
+resource "azurerm_cdn_frontdoor_origin" "public_ingress_azvote" {
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  name                          = "azvote-pub-ing"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
+
+  enabled                        = true
+  certificate_name_check_enabled = true
+  host_name                      = kubernetes_ingress_v1.public_ingress_azvote.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.public_ingress_azvote.0.spec.0.rule.0.host
+  priority                       = 1
+  weight                         = 1000
 }
 
 # AKS / Hello AKS
@@ -681,9 +1109,22 @@ resource "kubernetes_ingress_v1" "public_ingress_helloaks" {
     }
   }
 }
+resource "azurerm_cdn_frontdoor_origin" "public_ingress_helloaks" {
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  name                          = "helloaks-pub-ing"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
+
+  enabled                        = true
+  certificate_name_check_enabled = true
+  host_name                      = kubernetes_ingress_v1.public_ingress_helloaks.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.public_ingress_helloaks.0.spec.0.rule.0.host
+  priority                       = 1
+  weight                         = 1000
+}
+
 
 # AFD / Public Ingresses Origin group + origins (Option 1)
-
 resource "azurerm_cdn_frontdoor_origin_group" "public_ingress_origin_grp" {
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
@@ -704,45 +1145,6 @@ resource "azurerm_cdn_frontdoor_origin_group" "public_ingress_origin_grp" {
     successful_samples_required        = 3
   }
 }
-resource "azurerm_cdn_frontdoor_origin" "public_ingress_httpbin" {
-  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
-
-  name                          = "httpbin-pub-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
-
-  enabled                        = false
-  certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
-  priority                       = 1
-  weight                         = 1000
-}
-resource "azurerm_cdn_frontdoor_origin" "public_ingress_azvote" {
-  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
-
-  name                          = "azvote-pub-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
-
-  enabled                        = false
-  certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.public_ingress_azvote.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.public_ingress_azvote.0.spec.0.rule.0.host
-  priority                       = 1
-  weight                         = 1000
-}
-resource "azurerm_cdn_frontdoor_origin" "public_ingress_helloaks" {
-  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
-
-  name                          = "helloaks-pub-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
-
-  enabled                        = true
-  certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.public_ingress_helloaks.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.public_ingress_helloaks.0.spec.0.rule.0.host
-  priority                       = 1
-  weight                         = 1000
-}
 
 # AFD / Endpoint + resolution in public DNS for custom domain
 resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_1" {
@@ -751,8 +1153,14 @@ resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_1" {
   name                     = "aksafdpls1"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
 }
-resource "azurerm_dns_cname_record" "public_ingress_ebdemos_info" {
+resource "azurerm_dns_cname_record" "public_ingress_ebdemos_info_cname" {
+  # This record allows to redirect from the FQDN name to the AFD endpoint
   provider = azurerm.s2-connectivity
+
+  # depends_on = [
+  #   azurerm_cdn_frontdoor_route.public_ingress_route,
+  #   # azurerm_cdn_frontdoor_security_policy.example
+  # ]
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
@@ -762,15 +1170,30 @@ resource "azurerm_dns_cname_record" "public_ingress_ebdemos_info" {
   ttl                 = 60
   record              = azurerm_cdn_frontdoor_endpoint.ep_for_option_1.0.host_name
 }
+# resource "azurerm_dns_txt_record" "public_ingress_ebdemos_info_txt" {
+#   # This record allows AFD to validate ownership of the Public DNS
+#   provider = azurerm.s2-connectivity
+
+#   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+#   name                = join(".", ["_dnsauth", data.azurerm_dns_zone.public_dns_zone.name])
+#   zone_name           = data.azurerm_dns_zone.public_dns_zone.name
+#   resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
+#   ttl                 = 60
+
+#   record {
+#     value = azurerm_cdn_frontdoor_custom_domain.public_ingress_ebdemos_info.0.validation_token
+#   }
+# }
 resource "azurerm_cdn_frontdoor_custom_domain" "public_ingress_ebdemos_info" {
   depends_on = [azurerm_cdn_frontdoor_secret.tls_cert]
 
   count = local.deploy_aks && local.deploy_option1 ? 1 : 0
 
-  name                     = "${azurerm_dns_cname_record.public_ingress_ebdemos_info.0.name}-${replace(data.azurerm_dns_zone.public_dns_zone.name, ".", "-")}"
+  name                     = "${azurerm_dns_cname_record.public_ingress_ebdemos_info_cname.0.name}-${replace(data.azurerm_dns_zone.public_dns_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
-  host_name                = "${azurerm_dns_cname_record.public_ingress_ebdemos_info.0.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
+  # dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
+  host_name = "${azurerm_dns_cname_record.public_ingress_ebdemos_info_cname.0.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
   tls {
     certificate_type        = "CustomerCertificate"
     minimum_tls_version     = "TLS12"
@@ -790,6 +1213,7 @@ resource "azurerm_cdn_frontdoor_route" "public_ingress_route" {
     azurerm_cdn_frontdoor_origin.public_ingress_httpbin.0.id,
     azurerm_cdn_frontdoor_origin.public_ingress_azvote.0.id,
     azurerm_cdn_frontdoor_origin.public_ingress_helloaks.0.id,
+    azurerm_cdn_frontdoor_origin.public_ingress_whoami.0.id,
   ]
 
   forwarding_protocol    = "HttpsOnly"
@@ -1175,12 +1599,10 @@ resource "azurerm_cdn_frontdoor_route" "internal_ingress_route" {
 # Note: you will get HTTP/1.1 504 backs for sometime, before the site is up
 
 
-
 ########################################################################################
 ### OPTION 3: Expose the 3 Applications with Kubernetes Service and their PLS        ###
 ########################################################################################
 
-/*
 ##### OPTION 3: Expose the 3 Applications with a LoadBalancer Service type on the Internal Load Balancer and a PLS #####
 # AKS: Kubernetes Services with ILB and PLS
 resource "kubernetes_service_v1" "httpbin_svc_ilb" {
@@ -1292,6 +1714,8 @@ resource "azurerm_cdn_frontdoor_endpoint" "ep_for_option_3" {
 
 # AFD: Internal/PLS services Origin group + origins
 resource "azurerm_cdn_frontdoor_origin_group" "pls_svc" {
+  count = local.deploy_aks && local.deploy_option3 ? 1 : 0
+
   name                     = "pls-services"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
   session_affinity_enabled = false
@@ -1310,8 +1734,10 @@ resource "azurerm_cdn_frontdoor_origin_group" "pls_svc" {
   }
 }
 resource "azurerm_cdn_frontdoor_origin" "pls_azvote" {
+  count = local.deploy_aks && local.deploy_option3 ? 1 : 0
+
   name                          = "azvote-int"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pls_svc[0].id
 
   enabled                        = true
   certificate_name_check_enabled = true
@@ -1327,8 +1753,10 @@ resource "azurerm_cdn_frontdoor_origin" "pls_azvote" {
   # }
 }
 resource "azurerm_cdn_frontdoor_origin" "pls_httpbin" {
+  count = local.deploy_aks && local.deploy_option3 ? 1 : 0
+
   name                          = "httpbin-int"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pls_svc[0].id
 
   enabled                        = false
   certificate_name_check_enabled = true
@@ -1344,36 +1772,43 @@ resource "azurerm_cdn_frontdoor_origin" "pls_httpbin" {
   # }
 }
 
-resource "azurerm_dns_cname_record" "testint_ebdemos_info" {
+resource "azurerm_dns_cname_record" "pls_ebdemos_info" {
   provider = azurerm.s2-connectivity
 
-  name                = "testint"
+  count = local.deploy_aks && local.deploy_option3 ? 1 : 0
+
+  name                = "test-pls.int"
   zone_name           = data.azurerm_dns_zone.public_dns_zone.name
   resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
   ttl                 = 60
-  record              = azurerm_cdn_frontdoor_endpoint.ep_1.host_name
+  record              = azurerm_cdn_frontdoor_endpoint.ep_for_option_3.0.host_name
 }
-resource "azurerm_cdn_frontdoor_custom_domain" "testint_ebdemos_info" {
-  name                     = "${azurerm_dns_cname_record.testint_ebdemos_info.name}-${replace(data.azurerm_dns_zone.public_dns_zone.name, ".", "-")}"
+resource "azurerm_cdn_frontdoor_custom_domain" "pls_ebdemos_info" {
+  count = local.deploy_aks && local.deploy_option3 ? 1 : 0
+
+  name                     = "${azurerm_dns_cname_record.pls_ebdemos_info.0.name}-${replace(data.azurerm_dns_zone.public_dns_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
   dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
-  host_name                = "${azurerm_dns_cname_record.testint_ebdemos_info.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
+  host_name                = "${azurerm_dns_cname_record.pls_ebdemos_info.0.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
   # https://testext.ebdemos.info
 
   tls {
     certificate_type        = "CustomerCertificate"
     minimum_tls_version     = "TLS12"
     cdn_frontdoor_secret_id = azurerm_cdn_frontdoor_secret.tls_cert.id
+  }
 }
-resource "azurerm_cdn_frontdoor_route" "int_route" {
-  name                      = "rt-to-int-origins"
-  cdn_frontdoor_endpoint_id = azurerm_cdn_frontdoor_endpoint.ep_1.id
+resource "azurerm_cdn_frontdoor_route" "pls_route" {
+  count = local.deploy_aks && local.deploy_option3 ? 1 : 0
+
+  name                      = "route-to-pls-origins"
+  cdn_frontdoor_endpoint_id = azurerm_cdn_frontdoor_endpoint.ep_for_option_3.0.id
   enabled                   = true
 
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.internal_ingress_origin_grp.id
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.pls_svc[0].id
   cdn_frontdoor_origin_ids = [
-    azurerm_cdn_frontdoor_origin.int_azvote.id,
-    azurerm_cdn_frontdoor_origin.int_httpbin.id,
+    azurerm_cdn_frontdoor_origin.pls_azvote.0.id,
+    azurerm_cdn_frontdoor_origin.pls_httpbin.0.id,
   ]
 
   forwarding_protocol    = "HttpsOnly"
@@ -1382,7 +1817,7 @@ resource "azurerm_cdn_frontdoor_route" "int_route" {
   supported_protocols    = ["Https"]
 
   cdn_frontdoor_custom_domain_ids = [
-    azurerm_cdn_frontdoor_custom_domain.testint_ebdemos_info.id,
+    azurerm_cdn_frontdoor_custom_domain.pls_ebdemos_info.0.id,
   ]
   # link_to_default_domain = true
 }

@@ -26,11 +26,13 @@ locals {
   azure_vote            = "azure-vote"
   httpbin               = "httpbin"
   hello_aks             = "hello-aks"
+  whoami                = "whoami"
 
   apps_namespaces = [
     local.azure_vote,
     local.httpbin,
-    local.hello_aks
+    local.hello_aks,
+    local.whoami
   ]
   ns_full_set = toset(concat(
     local.apps_namespaces,
@@ -96,9 +98,9 @@ locals {
   #    - the Azure Front Door routing rule.
 
   # Deployment control variables
-  deploy_aks                = false
-  kubernetes_manifest_ready = false # Required to manage that resources of type kubernetes_manifest will query the cluster, even if not created
-  deploy_option1            = false # Front Door to Public kubernetes Ingresses
+  deploy_aks                = true
+  kubernetes_manifest_ready = true  # Required to manage that resources of type kubernetes_manifest will query the cluster, even if not created
+  deploy_option1            = true  # Front Door to Public kubernetes Ingresses
   deploy_option2            = false # Front Door to Internal kubernetes Ingresses through Private Link Service on the Internal Load Balancer
   deploy_option3            = false # Front Door to kubernetes Services through Private Link Service on the Internal Load Balancer
 }

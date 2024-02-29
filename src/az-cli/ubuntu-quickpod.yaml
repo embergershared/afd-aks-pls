@@ -17,10 +17,8 @@ spec:
 ### Use this pod for troubleshooting from within the cluster:
 # kubectl apply -f .\3-aks\ubuntu-quickpod.yaml
 # kubectl exec -it ubuntu -- /bin/bash
-# apt update && apt install curl dnsutils iputils-ping -y
+# apt update && apt install curl dnsutils iputils-ping ca-certificates -y
 ### Test DNS resolution:
 # curl -I https://www.microsoft.com
 ### Test TLS Certificate:
 # curl --insecure -vvI https://www.microsoft.com
-### Install the CA certificates:
-# sudo apt-get install ca-certificates
