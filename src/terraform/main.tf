@@ -883,66 +883,6 @@ resource "helm_release" "public_ingress_controller" {
   ]
 }
 
-# AKS / HTTPBIN
-resource "azurerm_dns_a_record" "public_ingress_httpbin_ebdemos_info" {
-  provider = azurerm.s2-connectivity
-
-  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
-
-  name                = "${local.httpbin}-ing"
-  zone_name           = data.azurerm_dns_zone.public_dns_zone.name
-  resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
-  ttl                 = 60
-  records             = [data.kubernetes_service_v1.public_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
-}
-resource "kubernetes_ingress_v1" "public_ingress_httpbin" {
-  depends_on = [azurerm_dns_a_record.public_ingress_httpbin_ebdemos_info]
-
-  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
-
-  wait_for_load_balancer = true
-  metadata {
-    name      = "${local.httpbin}-ing-public"
-    namespace = local.httpbin
-  }
-
-  spec {
-    ingress_class_name = local.public_ingress_name
-    rule {
-      host = trimsuffix(azurerm_dns_a_record.public_ingress_httpbin_ebdemos_info.0.fqdn, ".")
-      http {
-        path {
-          backend {
-            service {
-              name = "httpbin-svc-clusip"
-              port { number = 80 }
-            }
-          }
-          path_type = "Prefix"
-          path      = "/"
-        }
-      }
-    }
-
-    tls {
-      secret_name = "kv-${azurerm_key_vault_certificate.this.name}-tls-csi"
-    }
-  }
-}
-resource "azurerm_cdn_frontdoor_origin" "public_ingress_httpbin" {
-  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
-
-  name                          = "httpbin-pub-ing"
-  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
-
-  enabled                        = true
-  certificate_name_check_enabled = true
-  host_name                      = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
-  origin_host_header             = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
-  priority                       = 1
-  weight                         = 1000
-}
-
 # AKS / Whoami
 resource "azurerm_dns_a_record" "public_ingress_whoami_ebdemos_info" {
   provider = azurerm.s2-connectivity
@@ -1003,6 +943,66 @@ resource "azurerm_cdn_frontdoor_origin" "public_ingress_whoami" {
   weight                         = 1000
 }
 
+# AKS / HTTPBIN
+resource "azurerm_dns_a_record" "public_ingress_httpbin_ebdemos_info" {
+  provider = azurerm.s2-connectivity
+
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  name                = "${local.httpbin}-ing"
+  zone_name           = data.azurerm_dns_zone.public_dns_zone.name
+  resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
+  ttl                 = 60
+  records             = [data.kubernetes_service_v1.public_ingress_svc.0.status.0.load_balancer.0.ingress.0.ip]
+}
+resource "kubernetes_ingress_v1" "public_ingress_httpbin" {
+  depends_on = [azurerm_dns_a_record.public_ingress_httpbin_ebdemos_info]
+
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  wait_for_load_balancer = true
+  metadata {
+    name      = "${local.httpbin}-ing-public"
+    namespace = local.httpbin
+  }
+
+  spec {
+    ingress_class_name = local.public_ingress_name
+    rule {
+      host = trimsuffix(azurerm_dns_a_record.public_ingress_httpbin_ebdemos_info.0.fqdn, ".")
+      http {
+        path {
+          backend {
+            service {
+              name = "httpbin-svc-clusip"
+              port { number = 80 }
+            }
+          }
+          path_type = "Prefix"
+          path      = "/"
+        }
+      }
+    }
+
+    tls {
+      secret_name = "kv-${azurerm_key_vault_certificate.this.name}-tls-csi"
+    }
+  }
+}
+resource "azurerm_cdn_frontdoor_origin" "public_ingress_httpbin" {
+  count = local.deploy_aks && local.deploy_option1 ? 1 : 0
+
+  name                          = "httpbin-pub-ing"
+  cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
+
+  enabled                        = false
+  certificate_name_check_enabled = true
+  host_name                      = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
+  origin_host_header             = kubernetes_ingress_v1.public_ingress_httpbin.0.spec.0.rule.0.host
+  priority                       = 1
+  weight                         = 1000
+}
+
 # AKS / Azure Vote
 resource "azurerm_dns_a_record" "public_ingress_azvote_ebdemos_info" {
   provider = azurerm.s2-connectivity
@@ -1054,7 +1054,7 @@ resource "azurerm_cdn_frontdoor_origin" "public_ingress_azvote" {
   name                          = "azvote-pub-ing"
   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
 
-  enabled                        = true
+  enabled                        = false
   certificate_name_check_enabled = true
   host_name                      = kubernetes_ingress_v1.public_ingress_azvote.0.spec.0.rule.0.host
   origin_host_header             = kubernetes_ingress_v1.public_ingress_azvote.0.spec.0.rule.0.host
@@ -1115,7 +1115,7 @@ resource "azurerm_cdn_frontdoor_origin" "public_ingress_helloaks" {
   name                          = "helloaks-pub-ing"
   cdn_frontdoor_origin_group_id = azurerm_cdn_frontdoor_origin_group.public_ingress_origin_grp.0.id
 
-  enabled                        = true
+  enabled                        = false
   certificate_name_check_enabled = true
   host_name                      = kubernetes_ingress_v1.public_ingress_helloaks.0.spec.0.rule.0.host
   origin_host_header             = kubernetes_ingress_v1.public_ingress_helloaks.0.spec.0.rule.0.host
