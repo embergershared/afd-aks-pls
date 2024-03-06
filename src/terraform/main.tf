@@ -19,7 +19,7 @@ resource "azurerm_resource_group" "this" {
 
 # Key vault + Certificate
 resource "azurerm_key_vault" "this" {
-  name                = substr(lower("kv-${var.res_suffix}"), 0, 24)
+  name                = substr(lower("kv-${var.loc_sub}-${var.res_suffix}"), 0, 24)
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
   tenant_id           = var.tenant_id
@@ -46,7 +46,7 @@ resource "azurerm_key_vault_certificate" "this" {
 
 # Virtual Networek + Subnets
 resource "azurerm_virtual_network" "this" {
-  name                = "vnet-${var.res_suffix}"
+  name                = "vnet-${var.loc_sub}-${var.res_suffix}"
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
   address_space       = ["192.168.0.0/22"]
@@ -58,6 +58,12 @@ resource "azurerm_subnet" "ilb" {
   resource_group_name  = azurerm_resource_group.this.name
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = ["192.168.0.0/27"]
+}
+resource "azurerm_subnet" "workloads" {
+  name                 = "workloads-snet"
+  resource_group_name  = azurerm_resource_group.this.name
+  virtual_network_name = azurerm_virtual_network.this.name
+  address_prefixes     = ["192.168.32.0/27"]
 }
 resource "azurerm_subnet" "syspool1" {
   name                 = "aks-syspool1-snet"
@@ -126,7 +132,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "this" {
 resource "azurerm_kubernetes_cluster" "this" {
   count = local.deploy_aks ? 1 : 0
 
-  name                             = "aks-${var.res_suffix}"
+  name                             = "aks-${var.loc_sub}-${var.res_suffix}"
   location                         = azurerm_resource_group.this.location
   resource_group_name              = azurerm_resource_group.this.name
   node_resource_group              = "${azurerm_resource_group.this.name}-managed"
@@ -248,7 +254,7 @@ resource "kubernetes_namespace" "this" {
 
 ##### Azure Front Door Common configuration
 resource "azurerm_cdn_frontdoor_profile" "this" {
-  name                     = "afd-${var.res_suffix}"
+  name                     = "afd-${var.loc_sub}-${var.res_suffix}"
   resource_group_name      = azurerm_resource_group.this.name
   sku_name                 = "Premium_AzureFrontDoor"
   response_timeout_seconds = 60
@@ -256,6 +262,8 @@ resource "azurerm_cdn_frontdoor_profile" "this" {
   tags = azurerm_resource_group.this.tags
 }
 resource "azapi_update_resource" "frontdoor_profile_system_identity" {
+  depends_on = [azurerm_cdn_frontdoor_profile.this]
+
   type        = "Microsoft.Cdn/profiles@2023-02-01-preview"
   resource_id = azurerm_cdn_frontdoor_profile.this.id
   body = jsonencode({
@@ -288,7 +296,7 @@ resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
 
 # AKS + AFD / Log Analytics Workspace + Diag Settings
 resource "azurerm_log_analytics_workspace" "this" {
-  name                = substr(lower("law-${var.res_suffix}-${random_string.this.result}"), 0, 63)
+  name                = substr(lower("law-${var.loc_sub}-${var.res_suffix}-${random_string.this.result}"), 0, 63)
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
   sku                 = "PerGB2018"
@@ -410,6 +418,8 @@ resource "kubernetes_manifest" "kv_csi_secret_providers" {
 ##### AKS / Deploy the 3 Apps for the tests
 # / Hello AKS
 resource "kubernetes_deployment_v1" "helloaks_dep_v1" {
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "hello-aks-dep"
     namespace = kubernetes_namespace.this[local.hello_aks].metadata[0].name
@@ -475,6 +485,9 @@ resource "kubernetes_deployment_v1" "helloaks_dep_v1" {
   }
 }
 resource "kubernetes_service_v1" "helloaks_svc_v1" {
+
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "hello-aks-svc-clusip"
     namespace = kubernetes_namespace.this[local.hello_aks].metadata[0].name
@@ -493,6 +506,8 @@ resource "kubernetes_service_v1" "helloaks_svc_v1" {
 
 # / Httpbin
 resource "kubernetes_deployment_v1" "httpbin_dep_v1" {
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "httpbin-dep"
     namespace = kubernetes_namespace.this[local.httpbin].metadata[0].name
@@ -558,6 +573,8 @@ resource "kubernetes_deployment_v1" "httpbin_dep_v1" {
   }
 }
 resource "kubernetes_service_v1" "httpbin_svc_v1" {
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "httpbin-svc-clusip"
     namespace = kubernetes_namespace.this[local.httpbin].metadata[0].name
@@ -576,6 +593,8 @@ resource "kubernetes_service_v1" "httpbin_svc_v1" {
 
 # / Azure vote
 resource "kubernetes_deployment_v1" "azvote_back_dep_v1" {
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "azure-vote-back-dep"
     namespace = kubernetes_namespace.this[local.azure_vote].metadata[0].name
@@ -626,6 +645,8 @@ resource "kubernetes_deployment_v1" "azvote_back_dep_v1" {
   }
 }
 resource "kubernetes_service_v1" "azvote_back_svc_v1" {
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "azure-vote-back-svc-clusip"
     namespace = kubernetes_namespace.this[local.azure_vote].metadata[0].name
@@ -641,6 +662,8 @@ resource "kubernetes_service_v1" "azvote_back_svc_v1" {
   }
 }
 resource "kubernetes_deployment_v1" "azvote_front_dep_v1" {
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "azure-vote-front-dep"
     namespace = kubernetes_namespace.this[local.azure_vote].metadata[0].name
@@ -705,6 +728,8 @@ resource "kubernetes_deployment_v1" "azvote_front_dep_v1" {
   }
 }
 resource "kubernetes_service_v1" "azvote_front_svc_v1" {
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "azure-vote-front-svc-clusip"
     namespace = kubernetes_namespace.this[local.azure_vote].metadata[0].name
@@ -722,6 +747,8 @@ resource "kubernetes_service_v1" "azvote_front_svc_v1" {
 
 # / Whoami
 resource "kubernetes_deployment_v1" "whoami_dep_v1" {
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "whoami-dep"
     namespace = kubernetes_namespace.this[local.whoami].metadata[0].name
@@ -787,6 +814,8 @@ resource "kubernetes_deployment_v1" "whoami_dep_v1" {
   }
 }
 resource "kubernetes_service_v1" "whoami_svc_v1" {
+  count = local.deploy_aks && local.kubernetes_manifest_ready ? 1 : 0
+
   metadata {
     name      = "whoami-svc-clusip"
     namespace = kubernetes_namespace.this[local.whoami].metadata[0].name
@@ -1484,7 +1513,7 @@ resource "azurerm_cdn_frontdoor_origin" "internal_ingress_httpbin_origin" {
   weight                         = 1000
 
   private_link {
-    request_message        = "Please approve AFD httpbin-int-ing origin PE connection to ILB through PLS connection"
+    request_message        = "PE connection for httpbin-int-ing origin"
     location               = azurerm_resource_group.this.location
     private_link_target_id = local.ilb_pls_id
   }
@@ -1505,7 +1534,7 @@ resource "azurerm_cdn_frontdoor_origin" "internal_ingress_azvote_origin" {
   weight                         = 1000
 
   private_link {
-    request_message        = "Please approve AFD azvote-int-ing origin PE connection to ILB through PLS connection"
+    request_message        = "PE connection for azvote-int-ing origin"
     location               = azurerm_resource_group.this.location
     private_link_target_id = local.ilb_pls_id
   }
@@ -1518,14 +1547,14 @@ resource "azurerm_cdn_frontdoor_origin" "internal_ingress_helloaks_origin" {
 
   enabled                        = true
   certificate_name_check_enabled = true
-  # host_name                      = kubernetes_ingress_v1.internal_ingress_helloaks.0.spec.0.rule.0.host
-  host_name          = "192.168.0.11"
+  host_name                      = kubernetes_ingress_v1.internal_ingress_helloaks.0.spec.0.rule.0.host
+  # host_name          = "192.168.0.11"
   origin_host_header = kubernetes_ingress_v1.internal_ingress_helloaks.0.spec.0.rule.0.host
   priority           = 1
   weight             = 1000
 
   private_link {
-    request_message        = "Please approve AFD helloaks-int-ing origin PE connection to ILB through PLS connection"
+    request_message        = "PE connection for helloaks-int-ing origin"
     location               = azurerm_resource_group.this.location
     private_link_target_id = local.ilb_pls_id
   }
@@ -1557,8 +1586,8 @@ resource "azurerm_cdn_frontdoor_custom_domain" "internal_ingress_ebdemos_info" {
 
   name                     = "${azurerm_dns_cname_record.internal_ingress_ebdemos_info_public_cname.0.name}-${replace(data.azurerm_dns_zone.public_dns_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
-  host_name                = "${azurerm_dns_cname_record.internal_ingress_ebdemos_info_public_cname.0.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
+  # dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
+  host_name = "${azurerm_dns_cname_record.internal_ingress_ebdemos_info_public_cname.0.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
   # https://testext.ebdemos.info
 
   tls {
@@ -1589,7 +1618,7 @@ resource "azurerm_cdn_frontdoor_route" "internal_ingress_route" {
   cdn_frontdoor_custom_domain_ids = [
     azurerm_cdn_frontdoor_custom_domain.internal_ingress_ebdemos_info.0.id,
   ]
-  link_to_default_domain = true
+  link_to_default_domain = false
 }
 #*/
 # Be patient, AFD is slow, up to 10 minutes, then:
@@ -1777,7 +1806,7 @@ resource "azurerm_dns_cname_record" "pls_ebdemos_info" {
 
   count = local.deploy_aks && local.deploy_option3 ? 1 : 0
 
-  name                = "test-pls.int"
+  name                = "aksafd-internal-svc"
   zone_name           = data.azurerm_dns_zone.public_dns_zone.name
   resource_group_name = data.azurerm_dns_zone.public_dns_zone.resource_group_name
   ttl                 = 60
@@ -1788,8 +1817,8 @@ resource "azurerm_cdn_frontdoor_custom_domain" "pls_ebdemos_info" {
 
   name                     = "${azurerm_dns_cname_record.pls_ebdemos_info.0.name}-${replace(data.azurerm_dns_zone.public_dns_zone.name, ".", "-")}"
   cdn_frontdoor_profile_id = azurerm_cdn_frontdoor_profile.this.id
-  dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
-  host_name                = "${azurerm_dns_cname_record.pls_ebdemos_info.0.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
+  # dns_zone_id              = data.azurerm_dns_zone.public_dns_zone.id
+  host_name = "${azurerm_dns_cname_record.pls_ebdemos_info.0.name}.${data.azurerm_dns_zone.public_dns_zone.name}"
   # https://testext.ebdemos.info
 
   tls {
@@ -1819,8 +1848,7 @@ resource "azurerm_cdn_frontdoor_route" "pls_route" {
   cdn_frontdoor_custom_domain_ids = [
     azurerm_cdn_frontdoor_custom_domain.pls_ebdemos_info.0.id,
   ]
-  # link_to_default_domain = true
+  link_to_default_domain = false
 }
-# https://testint.ebdemos.info
-
+# https://aksafd-internal-svc.ebdemos.info
 #*/

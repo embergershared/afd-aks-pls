@@ -60,7 +60,7 @@ locals {
   ########  Deployment control  ########
 
   # Deployment steps:
-  # 1. Set all controls variables below to "false", run terraform apply to deploy:
+  # 1. Set all controls variables below to "false", run terraform apply to deploy or go to Step 1 directly:
   #    - RG, KV, AFD, VNet, Storage Account, Log Analytics Workspace,
   #    - AFD Diagnostic settings.
   #
@@ -73,7 +73,7 @@ locals {
   # 3. Set "kubernetes_manifest_ready" to "true", run terraform apply to deploy:
   #    - all the kubernetes_manifest based resources:
   #      - the CSI driver for Key vault,
-  #      - the 3 applications resources (deployments & services).
+  #      - the 3 applications resources (deployments & ClusterIP services).
   #
   # 4a. Set "deploy_option1" to "true", run terraform apply to deploy:
   #    - the Public ingress controller,
@@ -100,7 +100,7 @@ locals {
   # Deployment control variables
   deploy_aks                = true
   kubernetes_manifest_ready = true  # Required to manage that resources of type kubernetes_manifest will query the cluster, even if not created
-  deploy_option1            = true  # Front Door to Public kubernetes Ingresses
+  deploy_option1            = false # Front Door to Public kubernetes Ingresses # Visit: https://aksafd-pub-ing.ebdemos.info
   deploy_option2            = false # Front Door to Internal kubernetes Ingresses through Private Link Service on the Internal Load Balancer
-  deploy_option3            = false # Front Door to kubernetes Services through Private Link Service on the Internal Load Balancer
+  deploy_option3            = false # Front Door to kubernetes Services through Private Link Service on the Internal Load Balancer   # Visit: https://aksafd-internal-ing.ebdemos.info
 }
