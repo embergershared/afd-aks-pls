@@ -1,5 +1,5 @@
 *.sh text eol=lf
 # Then renorlmalize the files in your repo:
 #   git add --renormalize .
-#   git commit -m "Renormalized line endings to LF of r*.sh files"
+#   git commit -m "Renormalized line endings to LF for *.sh files"
 
