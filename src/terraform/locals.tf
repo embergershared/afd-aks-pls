@@ -11,12 +11,14 @@ locals {
   created_nowTZ  = "${formatdate("YYYY-MM-DD hh:mm", local.created_TZtime)} ${local.TZ_suffix}" # 2020-06-16 14:44 EST
 
   base_tags = tomap({
-    "Created_with"    = "Terraform v1.7.2 on windows_amd64",
-    "Created_on"      = "${local.created_nowTZ}",
-    "Initiated_by"    = "Manually",
-    "GiHub_repo"      = "https://github.com/embergershared/aks-afd-pls",
-    "Subscription"    = "s4",
-    "Terraform_state" = "tfstates-s4-spokes/aks-afd-pls"
+    "Created_with"     = "Terraform v1.7.2 on windows_amd64",
+    "Created_on"       = "${local.created_nowTZ}",
+    "Initiated_by"     = "Manually",
+    "GiHub_repo"       = "https://github.com/embergershared/aks-afd-pls",
+    "Subscription"     = "s4",
+    "Terraform_state"  = "tfstates-s4-spokes/aks-afd-pls",
+    "Terraform_plan"   = "embergershared/afd-aks-pls/src/terraform/main.tf",
+    "Terraform_values" = "embergershared/afd-aks-pls/src/terraform/secret.auto.tfvars",
   })
 
 
