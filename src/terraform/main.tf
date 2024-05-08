@@ -59,12 +59,12 @@ resource "azurerm_subnet" "ilb" {
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = ["192.168.0.0/27"]
 }
-resource "azurerm_subnet" "workloads" {
-  name                 = "workloads-snet"
-  resource_group_name  = azurerm_resource_group.this.name
-  virtual_network_name = azurerm_virtual_network.this.name
-  address_prefixes     = ["192.168.32.0/27"]
-}
+# resource "azurerm_subnet" "workloads" {
+#   name                 = "workloads-snet"
+#   resource_group_name  = azurerm_resource_group.this.name
+#   virtual_network_name = azurerm_virtual_network.this.name
+#   address_prefixes     = ["192.168.32.0/27"]
+# }
 resource "azurerm_subnet" "syspool1" {
   name                 = "aks-syspool1-snet"
   resource_group_name  = azurerm_resource_group.this.name
@@ -168,7 +168,7 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
   default_node_pool {
     name                 = "syspool1"
-    node_count           = 2
+    node_count           = 1
     vm_size              = "Standard_B2s"
     max_pods             = 150
     kubelet_disk_type    = "OS"
@@ -208,6 +208,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "userpool1" {
   workload_runtime = "OCIContainer"
   zones            = []
 }
+/*
 # Diagnostics Setting for the AKS cluster
 resource "azurerm_monitor_diagnostic_setting" "diag_aks" {
   count = local.deploy_aks ? 1 : 0
@@ -243,6 +244,7 @@ resource "azurerm_monitor_diagnostic_setting" "diag_aks" {
     ]
   }
 }
+#*/
 
 ##### Create all the namespaces to deploy the CSI secret provider in them
 resource "kubernetes_namespace" "this" {
@@ -294,6 +296,7 @@ resource "azurerm_cdn_frontdoor_secret" "tls_cert" {
   }
 }
 
+/*
 # AKS + AFD / Log Analytics Workspace + Diag Settings
 resource "azurerm_log_analytics_workspace" "this" {
   name                = substr(lower("law-${var.loc_sub}-${var.res_suffix}-${random_string.this.result}"), 0, 63)
@@ -362,7 +365,7 @@ resource "azurerm_monitor_diagnostic_setting" "diag_afd" {
     ]
   }
 }
-
+#*/
 
 ##### AKS / Create the CSI drivers in all namespaces for Key vault integration
 resource "azurerm_role_assignment" "aks_kv_rassignment" {
