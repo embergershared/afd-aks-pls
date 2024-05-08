@@ -187,8 +187,14 @@ resource "azurerm_kubernetes_cluster" "this" {
     secret_rotation_interval = "2m"
   }
 
+  workload_autoscaler_profile {
+    keda_enabled                    = false
+    vertical_pod_autoscaler_enabled = false
+  }
+
   tags = azurerm_resource_group.this.tags
 }
+
 resource "azurerm_kubernetes_cluster_node_pool" "userpool1" {
   count = local.deploy_aks ? 1 : 0
 
